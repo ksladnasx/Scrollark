@@ -15,7 +15,7 @@ function Inline({ text, color, fontSize, fontFamily }: InlineProps) {
   const theme = useAppTheme();
   const parts = text.split(/(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/g).filter(Boolean);
   return (
-    <Text style={[styles.paragraphText, { color, fontSize, lineHeight: fontSize * 1.66, fontFamily }]}> 
+    <Text selectable style={[styles.paragraphText, { color, fontSize, lineHeight: fontSize * 1.66, fontFamily }]}> 
       {parts.map((part, index) => {
         if (part.startsWith('**') && part.endsWith('**')) {
           return <Text key={`inline-bold-${index}`} style={styles.bold}>{part.slice(2, -2)}</Text>;
@@ -51,7 +51,7 @@ export function MarkdownRenderer({
       {blocks.map((block, index) => {
         if (block.type === 'heading') {
           const size = block.level <= 2 ? fontSize + 8 : fontSize + 4;
-          return <Text key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily }]}>{block.text}</Text>;
+          return <Text selectable key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily }]}>{block.text}</Text>;
         }
         if (block.type === 'code') {
           return (
@@ -99,7 +99,7 @@ export function MarkdownRenderer({
                           const isLastCell = cellIndex === columnCount - 1;
                           return (
                             <View key={`cell-${rowIndex}-${cellIndex}`} style={[styles.tableCell, { width: columnWidth, backgroundColor: theme.card }, isHeader && [styles.tableHeaderCell, { backgroundColor: theme.tableHeader }], !isLastCell && [styles.tableCellDivider, { borderRightColor: theme.line }], !isHeader && rowIndex % 2 === 0 && [styles.tableCellAlt, { backgroundColor: theme.tableAlt }]]}>
-                              <Text style={[isHeader ? styles.tableHeaderText : styles.tableCellText, { color: theme.ink, fontFamily }]}>{row[cellIndex] ?? ''}</Text>
+                              <Text selectable style={[isHeader ? styles.tableHeaderText : styles.tableCellText, { color: theme.ink, fontFamily }]}>{row[cellIndex] ?? ''}</Text>
                             </View>
                           );
                         })}

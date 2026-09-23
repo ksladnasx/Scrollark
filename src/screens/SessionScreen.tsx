@@ -222,7 +222,7 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
 
     return (
       <View style={[styles.pageItem, { height: pageHeight, width, backgroundColor: theme.card }]}> 
-        <KnowledgeCard card={item} settings={settings} onClose={onClose} footer={renderFooter(item)} />
+        <KnowledgeCard card={item} settings={settings} onClose={onClose} footer={renderFooter(item)} titleInHeader />
       </View>
     );
   }, [finish, onClose, pageHeight, renderFooter, settings, theme, width]);

@@ -34,11 +34,6 @@ export function KnowledgeScreen({ documents, cards, settings, onImported, onStar
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Library</Text>
-        <Text style={[styles.title, { color: theme.ink }]}>知识库</Text>
-        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>所有 Markdown 原文、解析结果和知识卡片都保存在本地 SQLite 与应用文档目录中。</Text>
-      </View>
       <View style={styles.actions}>
         <AppButton label="导入 .md" icon="add-outline" onPress={importDoc} loading={busy} />
         <AppButton label="开始 GET" icon="play-outline" variant="light" onPress={onStartSession} />

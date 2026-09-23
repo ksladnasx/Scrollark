@@ -3,6 +3,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import type { CardRecord, DocumentRecord, Settings, Statistics } from '../domain/types';
 import { parseMarkdownToCards } from '../utils/markdown';
+import { HOME_BACKGROUND_IMAGE_URL, HOME_BACKGROUND_IMAGE_URLS } from '../config/imageUrls';
 import { formatDayLabel, nowIso, startOfLocalDay, uid } from '../utils/date';
 
 const DB_NAME = 'scrollark.db';
@@ -14,6 +15,8 @@ const DEFAULT_SETTINGS: Settings = {
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'local',
   homeBackgroundImageMode: 'remote',
+  homeBackgroundImageUrl: HOME_BACKGROUND_IMAGE_URL,
+  homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
 };
 
@@ -58,6 +61,7 @@ async function migrate() {
       isFavorite INTEGER NOT NULL DEFAULT 0,
       getCount INTEGER NOT NULL DEFAULT 0,
       lastGotAt TEXT,
+      headerImageUrl TEXT,
       FOREIGN KEY(documentId) REFERENCES documents(id) ON DELETE CASCADE
     );
 
@@ -87,6 +91,11 @@ async function migrate() {
     CREATE INDEX IF NOT EXISTS idx_events_created ON events(createdAt);
   `);
 
+  const cardColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(cards)');
+  if (!cardColumns.some((column) => column.name === 'headerImageUrl')) {
+    await db.execAsync('ALTER TABLE cards ADD COLUMN headerImageUrl TEXT;');
+  }
+
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await db.runAsync('INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)', key, String(value));
   }
@@ -111,6 +120,12 @@ export async function getSettings(): Promise<Settings> {
     }
     if (row.key === 'homeBackgroundImageMode') {
       next.homeBackgroundImageMode = row.value === 'local' || row.value === 'remote' ? row.value : DEFAULT_SETTINGS.homeBackgroundImageMode;
+    }
+    if (row.key === 'homeBackgroundImageUrl') {
+      next.homeBackgroundImageUrl = HOME_BACKGROUND_IMAGE_URLS.includes(row.value as (typeof HOME_BACKGROUND_IMAGE_URLS)[number]) ? row.value : DEFAULT_SETTINGS.homeBackgroundImageUrl;
+    }
+    if (row.key === 'homeBackgroundDownloadDirectory') {
+      next.homeBackgroundDownloadDirectory = row.value || DEFAULT_SETTINGS.homeBackgroundDownloadDirectory;
     }
     if (row.key === 'themeMode') {
       next.themeMode = row.value === 'system' || row.value === 'light' || row.value === 'dark' ? row.value : DEFAULT_SETTINGS.themeMode;
@@ -244,6 +259,13 @@ export async function toggleFavorite(cardId: number, favorite: boolean) {
   });
 }
 
+export async function saveCardHeaderImageUrl(cardId: number, url: string) {
+  const clean = url.trim();
+  if (!clean) return;
+  const db = await getDb();
+  await db.runAsync('UPDATE cards SET headerImageUrl = ? WHERE id = ? AND (headerImageUrl IS NULL OR TRIM(headerImageUrl) = "")', clean, cardId);
+}
+
 export async function saveAnnotation(cardId: number, note: string) {
   const db = await getDb();
   const clean = note.trim();
@@ -273,7 +295,9 @@ export async function getStatistics(): Promise<Statistics> {
   ]);
 
   const today = startOfLocalDay();
-  const todayGets = await db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM events WHERE type = ? AND createdAt >= ?', 'get', today.toISOString());
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const todayGets = await db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND lastGotAt >= ? AND lastGotAt < ?', today.toISOString(), tomorrow.toISOString());
 
   const week: Statistics['week'] = [];
   for (let i = 6; i >= 0; i -= 1) {
@@ -281,7 +305,7 @@ export async function getStatistics(): Promise<Statistics> {
     day.setDate(day.getDate() - i);
     const nextDay = new Date(day);
     nextDay.setDate(day.getDate() + 1);
-    const row = await db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM events WHERE type = ? AND createdAt >= ? AND createdAt < ?', 'get', day.toISOString(), nextDay.toISOString());
+    const row = await db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND lastGotAt >= ? AND lastGotAt < ?', day.toISOString(), nextDay.toISOString());
     week.push({ day: formatDayLabel(day), count: row?.count ?? 0 });
   }
 

@@ -20,7 +20,17 @@
       "expo-sqlite",
       "expo-document-picker",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "允许 Scrollark 访问相册，用于保存首页壁纸。",
+          "savePhotosPermission": "允许 Scrollark 将首页壁纸保存到相册。",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
+      ]
     ],
     "icon": "./img/softicon.png"
   }

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { KnowledgeScreen } from './screens/KnowledgeScreen';
@@ -26,12 +27,14 @@ const initialSettings: Settings = {
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'local',
   homeBackgroundImageMode: 'remote',
+  homeBackgroundImageUrl: HOME_BACKGROUND_IMAGE_URL,
+  homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
 };
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
   home: { title: '首页', subtitle: 'Scrollark', icon: 'home-outline' },
-  knowledge: { title: '万卷', subtitle: '本地知识库', icon: 'book-outline' },
+  knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
   stats: { title: '今日签', subtitle: '阅读统计', icon: 'bar-chart-outline' },
   settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },

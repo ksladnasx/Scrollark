@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Statistics } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
@@ -8,14 +8,19 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
   const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
+  const [chartWidth, setChartWidth] = React.useState(0);
+  const chartHeight = 128;
+  const points = stats.week.map((day, index) => {
+    const x = stats.week.length <= 1 || chartWidth <= 0 ? 0 : (chartWidth / (stats.week.length - 1)) * index;
+    const y = chartHeight - Math.max(8, (day.count / max) * (chartHeight - 16));
+    return { ...day, x, y };
+  });
+  const onChartLayout = React.useCallback((event: LayoutChangeEvent) => {
+    setChartWidth(event.nativeEvent.layout.width);
+  }, []);
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Statistics</Text>
-        <Text style={[styles.title, { color: theme.ink }]}>统计</Text>
-        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>统计来自真实 get 事件，不使用写死数据。</Text>
-      </View>
 
       <View style={[styles.heroStat, { backgroundColor: theme.accent }] }>
         <Text style={[styles.heroValue, { color: theme.paper }]}>{stats.todayGets}</Text>
@@ -33,16 +38,34 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
 
       <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
         <Text style={[styles.sectionTitle, { color: theme.ink }]}>最近 7 天 get 趋势</Text>
-        <View style={styles.chart}>
-          {stats.week.map((day, index) => (
-            <View key={`week-${day.day}-${index}`} style={styles.barColumn}>
-              <View style={[styles.barTrack, { backgroundColor: theme.paperSoft }] }>
-                <View style={[styles.bar, { height: `${Math.max(7, (day.count / max) * 100)}%`, backgroundColor: theme.ink }]} />
+        <View style={styles.lineChart} onLayout={onChartLayout}>
+          <View style={[styles.linePlot, { height: chartHeight }]}>
+            {[0, 1, 2].map((line) => <View key={`grid-${line}`} style={[styles.gridLine, { top: (chartHeight / 2) * line, backgroundColor: theme.line }]} />)}
+            {chartWidth > 0 ? points.slice(0, -1).map((point, index) => {
+              const next = points[index + 1];
+              const dx = next.x - point.x;
+              const dy = next.y - point.y;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              const angle = `${Math.atan2(dy, dx)}rad`;
+              return (
+                <View
+                  key={`trend-line-${point.day}-${next.day}`}
+                  style={[styles.trendLine, { left: (point.x + next.x) / 2 - length / 2, top: (point.y + next.y) / 2 - 1.5, width: length, backgroundColor: theme.ink, transform: [{ rotate: angle }] }]}
+                />
+              );
+            }) : null}
+            {chartWidth > 0 ? points.map((point) => (
+              <View key={`trend-point-${point.day}`} style={[styles.trendPoint, { left: point.x - 5, top: point.y - 5, backgroundColor: theme.accentSoft, borderColor: theme.ink }]} />
+            )) : null}
+          </View>
+          <View style={styles.lineLabels}>
+            {points.map((day, index) => (
+              <View key={`week-label-${day.day}-${index}`} style={styles.lineLabelItem}>
+                <Text style={[styles.lineValue, { color: theme.ink }]}>{day.count}</Text>
+                <Text style={[styles.lineLabel, { color: theme.inkMuted }]}>{day.day}</Text>
               </View>
-              <Text style={[styles.barValue, { color: theme.ink }]}>{day.count}</Text>
-              <Text style={[styles.barLabel, { color: theme.inkMuted }]}>{day.day}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
       </View>
     </ScrollView>
@@ -77,10 +100,13 @@ const styles = StyleSheet.create({
   metricLabel: { color: palette.inkMuted, fontSize: 12, fontWeight: '800' },
   chartCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 14 },
   sectionTitle: { color: palette.ink, fontSize: 17, fontWeight: '900' },
-  chart: { height: 190, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
-  barColumn: { flex: 1, alignItems: 'center', gap: 5 },
-  barTrack: { height: 124, width: 16, borderRadius: 8, backgroundColor: palette.paperSoft, justifyContent: 'flex-end', overflow: 'hidden' },
-  bar: { width: 16, borderRadius: 8, backgroundColor: palette.ink },
-  barValue: { color: palette.ink, fontSize: 12, fontWeight: '900' },
-  barLabel: { color: palette.inkMuted, fontSize: 10, fontWeight: '700' },
+  lineChart: { gap: 10 },
+  linePlot: { position: 'relative', width: '100%' },
+  gridLine: { position: 'absolute', left: 0, right: 0, height: 1, opacity: 0.72 },
+  trendLine: { position: 'absolute', height: 3, borderRadius: 2 },
+  trendPoint: { position: 'absolute', width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
+  lineLabels: { flexDirection: 'row', justifyContent: 'space-between' },
+  lineLabelItem: { flex: 1, alignItems: 'center', gap: 3 },
+  lineValue: { color: palette.ink, fontSize: 12, fontWeight: '900' },
+  lineLabel: { color: palette.inkMuted, fontSize: 10, fontWeight: '700' },
 });

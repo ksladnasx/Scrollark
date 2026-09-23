@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Alert, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
-import { getDailyHomeBackgroundImageUri } from '../utils/homeBackground';
+import { getDailyHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, shadow, type AppTheme } from '../theme/tokens';
 
@@ -33,20 +33,50 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
   const theme = useAppTheme();
   const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(fallbackHomeImage);
+  const [homeImageUri, setHomeImageUri] = React.useState<string | null>(null);
+  const [downloadBusy, setDownloadBusy] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
-    getDailyHomeBackgroundImageUri()
+    getDailyHomeBackgroundImageUri(settings.homeBackgroundImageUrl)
       .then((uri) => {
-        if (alive) setHomeImage({ uri });
+        if (alive) {
+          setHomeImage({ uri });
+          setHomeImageUri(uri);
+        }
       })
       .catch(() => {
-        if (alive) setHomeImage(fallbackHomeImage);
+        if (alive) {
+          setHomeImage(fallbackHomeImage);
+          setHomeImageUri(null);
+        }
       });
     return () => {
       alive = false;
     };
-  }, [fallbackHomeImage]);
+  }, [fallbackHomeImage, settings.homeBackgroundImageUrl]);
+
+  const downloadBackground = React.useCallback(async () => {
+    if (downloadBusy) return;
+    try {
+      setDownloadBusy(true);
+      const sourceUri = homeImageUri ?? await getDailyHomeBackgroundImageUri(settings.homeBackgroundImageUrl);
+      const savedUri = await saveHomeBackgroundImageToDirectory(sourceUri, settings.homeBackgroundDownloadDirectory);
+      Alert.alert('下载完成', `背景图已保存到：\n${savedUri}`);
+    } catch (error) {
+      Alert.alert('下载失败', error instanceof Error ? error.message : '背景图保存失败，请稍后再试。');
+    } finally {
+      setDownloadBusy(false);
+    }
+  }, [downloadBusy, homeImageUri, settings.homeBackgroundDownloadDirectory, settings.homeBackgroundImageUrl]);
+
+  const confirmDownloadBackground = React.useCallback(() => {
+    if (downloadBusy) return;
+    Alert.alert('下载背景图', '是否下载当前首页背景图？', [
+      { text: '取消', style: 'cancel' },
+      { text: '下载', onPress: () => { void downloadBackground(); } },
+    ]);
+  }, [downloadBackground, downloadBusy]);
 
   const today = React.useMemo(() => {
     const date = new Date();
@@ -59,9 +89,11 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
 
   return (
     <ImageBackground source={homeImage} resizeMode="cover" style={styles.screen} imageStyle={styles.backgroundImage}>
-      <View style={styles.scrim} />
+      <Pressable style={styles.backgroundPressArea} delayLongPress={600} onLongPress={confirmDownloadBackground}>
+        <View style={styles.scrim} />
+      </Pressable>
 
-      <View style={styles.topArea}>
+      <View style={styles.topArea} pointerEvents="box-none">
         <View style={styles.topMenu}>
           {menu.map((item) => (
             <Pressable key={`home-menu-${item.id}`} onPress={() => onNavigate(item.tab)} style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}>
@@ -121,6 +153,7 @@ function Quick({ icon, label, value, onPress, theme }: { icon: keyof typeof Ioni
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#11110F', justifyContent: 'space-between' },
   backgroundImage: { width: '100%', height: '100%' },
+  backgroundPressArea: { ...StyleSheet.absoluteFillObject },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },
   topArea: { flex: 1, paddingTop: 44, paddingHorizontal: 16, paddingBottom: 10 },
   topMenu: { alignSelf: 'flex-end', flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, backgroundColor: 'rgba(20,20,20,0.22)' },
@@ -146,4 +179,3 @@ const styles = StyleSheet.create({
   quickLabel: { color: '#333333', fontSize: 16 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
 });
-

@@ -26,7 +26,7 @@ export function FavoritesScreen({ cards, settings }: { cards: CardRecord[]; sett
           onPress={() => setSelectedCard(card)}
           style={({ pressed }) => [styles.cardWrap, pressed && styles.pressed]}
         >
-          <KnowledgeCard card={card} settings={settings} compact />
+          <KnowledgeCard card={card} settings={settings} compact showAnnotationPreview />
         </Pressable>
       ))}
     </ScrollView>

@@ -13,6 +13,8 @@ type Props = {
   compact?: boolean;
   onClose?: () => void;
   footer?: React.ReactNode;
+  titleInHeader?: boolean;
+  showAnnotationPreview?: boolean;
 };
 
 function normalizeTitle(value: string) {
@@ -51,11 +53,14 @@ function readableCardTextColor(theme: AppTheme, color: string) {
   return color === '#171611' || color === '#30443A' || color === '#263E4B' || color === '#5B3B28' ? theme.ink : color;
 }
 
-export function KnowledgeCard({ card, settings, compact = false, onClose, footer }: Props) {
+export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false }: Props) {
   const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
   const textColor = readableCardTextColor(theme, settings.fontColor);
+  const annotation = card.annotation?.trim() ?? '';
+  const shouldShowTitleInHeader = titleInHeader && !compact;
+  const shouldShowTitleInBody = !shouldShowTitleInHeader;
   const [showHeaderTitle, setShowHeaderTitle] = React.useState(false);
   const showHeaderTitleRef = React.useRef(false);
   const titleHeightRef = React.useRef(42);
@@ -63,45 +68,51 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
   React.useEffect(() => {
     showHeaderTitleRef.current = false;
     setShowHeaderTitle(false);
-  }, [card.id, settings.cardHeaderImageMode]);
+  }, [card.id, settings.cardHeaderImageMode, titleInHeader]);
 
   const handleTitleLayout = React.useCallback((event: { nativeEvent: { layout: { height: number } } }) => {
     titleHeightRef.current = event.nativeEvent.layout.height;
   }, []);
 
   const handleContentScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (compact || settings.cardHeaderImageMode !== 'hidden') return;
+    if (compact || shouldShowTitleInHeader || settings.cardHeaderImageMode !== 'hidden') return;
     const titleOutOfViewOffset = 16 + titleHeightRef.current + 6;
     const next = event.nativeEvent.contentOffset.y >= titleOutOfViewOffset;
     if (next !== showHeaderTitleRef.current) {
       showHeaderTitleRef.current = next;
       setShowHeaderTitle(next);
     }
-  }, [compact, settings.cardHeaderImageMode]);
+  }, [compact, settings.cardHeaderImageMode, shouldShowTitleInHeader]);
 
   const body = (
     <>
-      <Text
-        onLayout={compact ? undefined : handleTitleLayout}
-        style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]}
-        numberOfLines={compact ? 2 : undefined}
-      >
-        {title}
-      </Text>
-      {meta ? <Text style={[styles.meta, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 1 : undefined}>{meta}</Text> : null}
+      {shouldShowTitleInBody ? (
+        <>
+          <Text
+            selectable
+            onLayout={compact ? undefined : handleTitleLayout}
+            style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]}
+            numberOfLines={compact ? 2 : undefined}
+            ellipsizeMode="tail"
+          >
+            {title}
+          </Text>
+          {meta ? <Text selectable style={[styles.meta, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 1 : undefined} ellipsizeMode="tail">{meta}</Text> : null}
+        </>
+      ) : null}
+      {annotation && (!compact || showAnnotationPreview) ? (
+        <View style={[styles.annotationBox, compact && styles.compactAnnotationBox, { backgroundColor: theme.paperSoft }] }>
+          <Text selectable style={[styles.annotationLabel, { color: theme.inkMuted }]}>我的批注</Text>
+          <Text selectable style={[styles.annotationText, compact && styles.compactAnnotationText, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 2 : undefined} ellipsizeMode="tail">{annotation}</Text>
+        </View>
+      ) : null}
       {compact ? (
-        <Text style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={6} ellipsizeMode="tail">
-          {makeCompactPreview(card.content, title) || '点击查看卡片详情'}
+        <Text selectable style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={showAnnotationPreview && annotation ? 3 : 4} ellipsizeMode="tail">
+          {makeCompactPreview(card.content, title) || '点击查看卡片内容'}
         </Text>
       ) : (
         <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={textColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} />
       )}
-      {card.annotation && !compact ? (
-        <View style={[styles.annotationBox, { backgroundColor: theme.paperSoft }] }>
-          <Text style={[styles.annotationLabel, { color: theme.inkMuted }]}>我的批注</Text>
-          <Text style={[styles.annotationText, { color: theme.ink, fontFamily: settings.fontFamily }]}>{card.annotation}</Text>
-        </View>
-      ) : null}
     </>
   );
 
@@ -111,10 +122,18 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
         <CardHeaderImage
           mode={settings.cardHeaderImageMode}
           cardKey={`${card.id}-${card.documentId}-${card.sortOrder}`}
+          cardId={card.id}
+          cachedUrl={card.headerImageUrl}
           imageStyle={styles.headerImage}
           style={[styles.header, compact && styles.compactHeader]}
         >
           <View style={styles.headerScrim} />
+          {shouldShowTitleInHeader ? (
+            <View style={styles.imageHeaderTitleWrap}>
+              <Text selectable style={[styles.imageHeaderTitle, { fontFamily: settings.fontFamily }]} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
+              {meta ? <Text selectable style={[styles.imageHeaderSource, { fontFamily: settings.fontFamily }]} numberOfLines={1} ellipsizeMode="tail">{meta}</Text> : null}
+            </View>
+          ) : null}
           {onClose ? (
             <Pressable onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
               <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
@@ -128,10 +147,10 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
               <Ionicons name="chevron-back" size={23} color={theme.ink} />
             </Pressable>
           ) : null}
-          {showHeaderTitle && !compact ? (
+          {(showHeaderTitle || shouldShowTitleInHeader) && !compact ? (
             <View style={styles.textHeaderContent}>
-              <Text style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={1}>{title}</Text>
-              {meta ? <Text style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>{meta}</Text> : null}
+              <Text selectable style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={1}>{title}</Text>
+              {meta ? <Text selectable style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>{meta}</Text> : null}
             </View>
           ) : (
             <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
@@ -195,6 +214,32 @@ const styles = StyleSheet.create({
   headerScrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  imageHeaderTitleWrap: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: 20,
+    gap: 5,
+  },
+  imageHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -0.8,
+    textShadowColor: 'rgba(0,0,0,0.36)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 8,
+  },
+  imageHeaderSource: {
+    color: 'rgba(255,255,255,0.86)',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.32)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   textHeader: {
     height: 86,
@@ -287,11 +332,16 @@ const styles = StyleSheet.create({
     lineHeight: 23,
   },
   annotationBox: {
-    marginTop: 12,
+    marginTop: 8,
     borderRadius: radius.lg,
     backgroundColor: '#F4EAD8',
     padding: 15,
     gap: 6,
+  },
+  compactAnnotationBox: {
+    marginTop: 0,
+    padding: 12,
+    gap: 4,
   },
   annotationLabel: {
     color: palette.inkMuted,
@@ -302,6 +352,10 @@ const styles = StyleSheet.create({
     color: palette.ink,
     fontSize: 15,
     lineHeight: 23,
+  },
+  compactAnnotationText: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   footer: {
     borderTopWidth: 1,

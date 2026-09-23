@@ -30,10 +30,11 @@ export type CardRecord = {
   isFavorite: number;
   getCount: number;
   lastGotAt: string | null;
+  headerImageUrl: string | null;
   annotation: string | null;
 };
 
-export type CardInput = Omit<CardRecord, 'id' | 'documentTitle' | 'createdAt' | 'isGot' | 'isFavorite' | 'getCount' | 'lastGotAt' | 'annotation'>;
+export type CardInput = Omit<CardRecord, 'id' | 'documentTitle' | 'createdAt' | 'isGot' | 'isFavorite' | 'getCount' | 'lastGotAt' | 'headerImageUrl' | 'annotation'>;
 
 export type Settings = {
   sessionCardCount: number;
@@ -43,6 +44,8 @@ export type Settings = {
   fontFamily: string;
   cardHeaderImageMode: CardHeaderImageMode;
   homeBackgroundImageMode: HomeBackgroundImageMode;
+  homeBackgroundImageUrl: string;
+  homeBackgroundDownloadDirectory: string;
   themeMode: ThemeMode;
 };
 

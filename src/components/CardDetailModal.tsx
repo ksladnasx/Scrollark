@@ -18,7 +18,7 @@ export function CardDetailModal({ card, settings, onClose }: Props) {
   return (
     <Modal visible={Boolean(card)} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[styles.wrap, { backgroundColor: theme.card }]} edges={['top', 'bottom']}>
-        {card ? <KnowledgeCard card={card} settings={settings} onClose={onClose} /> : null}
+        {card ? <KnowledgeCard card={card} settings={settings} onClose={onClose} titleInHeader /> : null}
         <Pressable onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
           <Ionicons name="close" size={24} color="#FFFFFF" />
         </Pressable>
