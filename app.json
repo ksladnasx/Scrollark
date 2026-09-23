@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Scrollark",
+    "slug": "scrollark",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "scheme": "scrollark",
+    "android": {
+      "package": "com.scrollark.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#11110F"
+      }
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-document-picker",
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}

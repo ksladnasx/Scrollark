@@ -1,0 +1,59 @@
+﻿# Dependencies
+node_modules/
+
+# Expo
+.expo/
+.web-build/
+
+# Build output
+dist/
+build/
+android/
+ios/
+
+# Native / Expo generated files
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# TypeScript / tooling cache
+*.tsbuildinfo
+.eslintcache
+
+# Metro / React Native cache
+.metro-cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Local test / coverage
+coverage/
+.nyc_output/
