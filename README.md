@@ -2,6 +2,8 @@
 
 Scrollark 是一款面向 Markdown 知识文档的移动端卡片阅读应用。应用会将本地 Markdown 文档导入到本机数据库，并按照约定的标题层级拆分为可刷读、可收藏、可批注、可统计的知识卡片，适合把长篇笔记、课程资料、读书摘录等内容转化为轻量复习流。
 
+请移步Realse进行下载: 
+
 > 当前项目基于 Expo / React Native / TypeScript 开发，主要面向移动端竖屏阅读场景。
 
 ## 目录
@@ -34,9 +36,9 @@ Scrollark 是一款面向 Markdown 知识文档的移动端卡片阅读应用。
 | --- | --- | --- |
 | <img src="./img/readme/首页.jpg" alt="首页" width="220" /> | <img src="./img/readme/知识库页.jpg" alt="知识库页" width="220" /> | <img src="./img/readme/刷知识页.jpg" alt="刷知识页" width="220" /> |
 
-| 收藏与批注 | 统计 |
-| --- | --- |
-| <img src="./img/readme/收藏与批注页.jpg" alt="收藏与批注页" width="220" /> | <img src="./img/readme/统计页.jpg" alt="统计页" width="220" /> |
+| 收藏与批注 | 统计 | 设置 |
+| --- | --- | --- |
+| <img src="./img/readme/收藏与批注页.jpg" alt="收藏与批注页" width="220" /> | <img src="./img/readme/统计页.jpg" alt="统计页" width="220" /> | <img src="./img/readme/设置页.jpg" alt="设置页" width="220" /> |
 
 ## 技术栈
 
@@ -321,5 +323,6 @@ Scrollark 的核心导入规则位于 `src/utils/markdown.ts` 的 `parseMarkdown
 当前项目版本：`1.0.0`
 
 详见 `package.json` 与 `app.json`。
+
 
 
