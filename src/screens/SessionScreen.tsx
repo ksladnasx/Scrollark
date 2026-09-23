@@ -6,6 +6,7 @@ import { AppButton } from '../components/AppButton';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { buildSessionCards, importMarkdownDocument, markGot, saveAnnotation, toggleFavorite } from '../data/repository';
 import type { CardRecord, SessionSummary, Settings } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 type Props = {
@@ -23,6 +24,7 @@ function isEndPage(item: SessionItem): item is EndPage {
 }
 
 export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
+  const theme = useAppTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [pageHeight, setPageHeight] = React.useState(height);
@@ -183,33 +185,33 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
   }, [scheduleSnapBack, settleToPage]);
 
   const renderFooter = React.useCallback((card: CardRecord) => (
-    <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }] }>
+    <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8), backgroundColor: theme.card }] }>
       <Pressable onPress={() => openAnnotation(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? palette.red : palette.ink} />
-        <Text style={styles.actionText}>批注</Text>
+        <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? theme.red : theme.ink} />
+        <Text style={[styles.actionText, { color: theme.inkMuted }]}>批注</Text>
       </Pressable>
       <Pressable onPress={() => handleFavorite(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? palette.red : palette.ink} />
-        <Text style={styles.actionText}>收藏</Text>
+        <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? theme.red : theme.ink} />
+        <Text style={[styles.actionText, { color: theme.inkMuted }]}>收藏</Text>
       </Pressable>
-      <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, card.isGot ? styles.getButtonActive : null, pressed && styles.pressed]}>
-        <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? '#FFFFFF' : palette.ink} />
-        <Text style={[styles.getText, card.isGot ? styles.getTextActive : null]}>{card.isGot ? '已 get' : 'get'}</Text>
+      <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, card.isGot ? [styles.getButtonActive, { backgroundColor: theme.ink, borderColor: theme.ink }] : null, pressed && styles.pressed]}>
+        <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? theme.paper : theme.ink} />
+        <Text style={[styles.getText, card.isGot ? styles.getTextActive : null, { color: card.isGot ? theme.paper : theme.ink }]}>{card.isGot ? '已 get' : 'get'}</Text>
       </Pressable>
       <Pressable onPress={onClose} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name="ellipsis-horizontal" size={25} color={palette.ink} />
+        <Ionicons name="ellipsis-horizontal" size={25} color={theme.ink} />
       </Pressable>
     </View>
-  ), [handleFavorite, handleGet, insets.bottom, onClose, openAnnotation]);
+  ), [handleFavorite, handleGet, insets.bottom, onClose, openAnnotation, theme]);
 
   const renderItem = React.useCallback(({ item }: { item: SessionItem }) => {
     if (isEndPage(item)) {
       return (
-        <View style={[styles.pageItem, { height: pageHeight, width }]}> 
-          <View style={styles.endPage}>
-            <Text style={styles.endEyebrow}>Session Complete</Text>
-            <Text style={styles.endTitle}>这一轮读完了</Text>
-            <Text style={styles.endBody}>稍等一下，正在整理本轮 get、收藏与批注记录。</Text>
+        <View style={[styles.pageItem, { height: pageHeight, width, backgroundColor: theme.card }]}> 
+          <View style={[styles.endPage, { backgroundColor: theme.card }] }>
+            <Text style={[styles.endEyebrow, { color: theme.inkMuted }]}>Session Complete</Text>
+            <Text style={[styles.endTitle, { color: theme.ink }]}>这一轮读完了</Text>
+            <Text style={[styles.endBody, { color: theme.inkMuted }]}>稍等一下，正在整理本轮 get、收藏与批注记录。</Text>
             <AppButton label="查看总结" icon="checkmark-outline" onPress={finish} />
           </View>
         </View>
@@ -217,29 +219,29 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
     }
 
     return (
-      <View style={[styles.pageItem, { height: pageHeight, width }]}> 
+      <View style={[styles.pageItem, { height: pageHeight, width, backgroundColor: theme.card }]}> 
         <KnowledgeCard card={item} settings={settings} onClose={onClose} footer={renderFooter(item)} />
       </View>
     );
-  }, [finish, onClose, pageHeight, renderFooter, settings, width]);
+  }, [finish, onClose, pageHeight, renderFooter, settings, theme, width]);
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.darkWrap} edges={['top', 'bottom']}>
-        <Text style={styles.loadingText}>正在整理卡片…</Text>
+      <SafeAreaView style={[styles.darkWrap, { backgroundColor: theme.paper }]} edges={['top', 'bottom']}>
+        <Text style={[styles.loadingText, { color: theme.ink }]}>正在整理卡片…</Text>
       </SafeAreaView>
     );
   }
 
   if (cards.length === 0) {
     return (
-      <SafeAreaView style={styles.emptyWrap} edges={['top', 'bottom']}>
-        <Pressable onPress={onClose} style={styles.close}>
-          <Ionicons name="chevron-back" size={24} color={palette.ink} />
+      <SafeAreaView style={[styles.emptyWrap, { backgroundColor: theme.paper }]} edges={['top', 'bottom']}>
+        <Pressable onPress={onClose} style={[styles.close, { backgroundColor: theme.paperElevated }] }>
+          <Ionicons name="chevron-back" size={24} color={theme.ink} />
         </Pressable>
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>还没有可读卡片</Text>
-          <Text style={styles.emptyBody}>先导入一个 Markdown 文档。每个三级标题会生成一张知识卡片。</Text>
+        <View style={[styles.emptyCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+          <Text style={[styles.emptyTitle, { color: theme.ink }]}>还没有可读卡片</Text>
+          <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>先导入一个 Markdown 文档。每个三级标题会生成一张知识卡片。</Text>
           <AppButton label="导入 Markdown" icon="document-attach-outline" onPress={importFirst} />
           {message ? <Text style={styles.message}>{message}</Text> : null}
         </View>
@@ -248,8 +250,8 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.sessionWrap} edges={['top']}>
-      <View style={styles.listWrap} onLayout={(event) => setPageHeight(event.nativeEvent.layout.height)}>
+    <SafeAreaView style={[styles.sessionWrap, { backgroundColor: theme.card }]} edges={['top']}>
+      <View style={[styles.listWrap, { backgroundColor: theme.card }]} onLayout={(event) => setPageHeight(event.nativeEvent.layout.height)}>
       <FlatList
         ref={listRef}
         data={sessionItems}
@@ -280,8 +282,8 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
       </View>
       <Modal visible={Boolean(annotationCard)} transparent animationType="fade" onRequestClose={() => setAnnotationCard(null)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>卡片批注</Text>
+          <View style={[styles.modalCard, { backgroundColor: theme.paperElevated }] }>
+            <Text style={[styles.modalTitle, { color: theme.ink }]}>卡片批注</Text>
             <TextInput
               value={draftNote}
               onChangeText={setDraftNote}
@@ -289,7 +291,7 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
               autoFocus
               placeholder="写下你的理解、疑问或行动点"
               placeholderTextColor={palette.inkMuted}
-              style={[styles.noteInput, { fontFamily: settings.fontFamily }]}
+              style={[styles.noteInput, { fontFamily: settings.fontFamily, backgroundColor: theme.paperSoft, color: theme.ink }]}
               textAlignVertical="top"
             />
             <View style={styles.modalActions}>

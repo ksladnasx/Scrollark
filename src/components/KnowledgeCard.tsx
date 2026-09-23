@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
-import { palette, radius, shadow } from '../theme/tokens';
+import { useAppTheme } from '../theme/ThemeContext';
+import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
 import { CardHeaderImage } from './CardHeaderImage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -17,7 +18,6 @@ type Props = {
 function normalizeTitle(value: string) {
   return value.replace(/^[#\s]+/, '').replace(/[\s#*_`>\[\]]/g, '').trim().toLowerCase();
 }
-
 
 function makeCompactPreview(markdown: string, title: string) {
   return stripDuplicatedLeadingTitle(markdown, title)
@@ -46,34 +46,41 @@ function stripDuplicatedLeadingTitle(markdown: string, title: string) {
   return [...lines.slice(0, firstContentIndex), ...lines.slice(firstContentIndex + 1)].join('\n').trimStart();
 }
 
+function readableCardTextColor(theme: AppTheme, color: string) {
+  if (!theme.dark) return color;
+  return color === '#171611' || color === '#30443A' || color === '#263E4B' || color === '#5B3B28' ? theme.ink : color;
+}
+
 export function KnowledgeCard({ card, settings, compact = false, onClose, footer }: Props) {
+  const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
+  const textColor = readableCardTextColor(theme, settings.fontColor);
 
   const body = (
     <>
-      <Text style={[styles.title, compact && styles.compactTitle, { color: settings.fontColor, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 2 : undefined}>
+      <Text style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 2 : undefined}>
         {title}
       </Text>
-      {meta ? <Text style={[styles.meta, { fontFamily: settings.fontFamily }]} numberOfLines={compact ? 1 : undefined}>{meta}</Text> : null}
+      {meta ? <Text style={[styles.meta, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 1 : undefined}>{meta}</Text> : null}
       {compact ? (
-        <Text style={[styles.previewText, { color: settings.fontColor, fontFamily: settings.fontFamily }]} numberOfLines={6} ellipsizeMode="tail">
+        <Text style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={6} ellipsizeMode="tail">
           {makeCompactPreview(card.content, title) || '点击查看卡片详情'}
         </Text>
       ) : (
-        <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={settings.fontColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} />
+        <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={textColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} />
       )}
       {card.annotation && !compact ? (
-        <View style={styles.annotationBox}>
-          <Text style={styles.annotationLabel}>我的批注</Text>
-          <Text style={[styles.annotationText, { fontFamily: settings.fontFamily }]}>{card.annotation}</Text>
+        <View style={[styles.annotationBox, { backgroundColor: theme.paperSoft }] }>
+          <Text style={[styles.annotationLabel, { color: theme.inkMuted }]}>我的批注</Text>
+          <Text style={[styles.annotationText, { color: theme.ink, fontFamily: settings.fontFamily }]}>{card.annotation}</Text>
         </View>
       ) : null}
     </>
   );
 
   return (
-    <View style={[styles.card, compact && styles.compactCard]}>
+    <View style={[styles.card, { backgroundColor: theme.card }, compact && [styles.compactCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]]}>
       {settings.cardHeaderImageMode !== 'hidden' ? (
         <CardHeaderImage
           mode={settings.cardHeaderImageMode}
@@ -88,17 +95,26 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
             </Pressable>
           ) : null}
         </CardHeaderImage>
-      ) : null}
+      ) : (
+        <View style={[styles.textHeader, compact && styles.compactTextHeader, { backgroundColor: theme.paperSoft, borderBottomColor: theme.line }] }>
+          {onClose ? (
+            <Pressable onPress={onClose} style={({ pressed }) => [styles.textCloseButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
+              <Ionicons name="chevron-back" size={23} color={theme.ink} />
+            </Pressable>
+          ) : null}
+          <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
+        </View>
+      )}
 
       {compact ? (
-        <View style={styles.compactContent}>{body}</View>
+        <View style={[styles.compactContent, { backgroundColor: theme.paperElevated }]}>{body}</View>
       ) : (
-        <ScrollView style={styles.content} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        <ScrollView style={[styles.content, { backgroundColor: theme.card }]} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false} nestedScrollEnabled>
           {body}
         </ScrollView>
       )}
 
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      {footer ? <View style={[styles.footer, { backgroundColor: theme.card, borderTopColor: theme.line }]}>{footer}</View> : null}
     </View>
   );
 }
@@ -139,6 +155,33 @@ const styles = StyleSheet.create({
   headerScrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.08)',
+  },
+  textHeader: {
+    height: 86,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+  },
+  compactTextHeader: {
+    height: 54,
+  },
+  textHeaderLabel: {
+    marginLeft: 58,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  textCloseButton: {
+    position: 'absolute',
+    left: 18,
+    top: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   closeButton: {
     position: 'absolute',

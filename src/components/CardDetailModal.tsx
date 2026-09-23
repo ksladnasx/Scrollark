@@ -3,6 +3,7 @@ import React from 'react';
 import { Modal, Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { CardRecord, Settings } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/tokens';
 import { KnowledgeCard } from './KnowledgeCard';
 
@@ -13,9 +14,10 @@ type Props = {
 };
 
 export function CardDetailModal({ card, settings, onClose }: Props) {
+  const theme = useAppTheme();
   return (
     <Modal visible={Boolean(card)} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.wrap} edges={['top', 'bottom']}>
+      <SafeAreaView style={[styles.wrap, { backgroundColor: theme.card }]} edges={['top', 'bottom']}>
         {card ? <KnowledgeCard card={card} settings={settings} onClose={onClose} /> : null}
         <Pressable onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
           <Ionicons name="close" size={24} color="#FFFFFF" />

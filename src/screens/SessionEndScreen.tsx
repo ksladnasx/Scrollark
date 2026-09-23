@@ -2,15 +2,17 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { AppButton } from '../components/AppButton';
 import type { SessionSummary } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 export function SessionEndScreen({ summary, onHome, onContinue }: { summary: SessionSummary; onHome: () => void; onContinue: () => void }) {
+  const theme = useAppTheme();
   return (
-    <View style={styles.wrap}>
-      <View style={styles.card}>
-        <Text style={styles.eyebrow}>Session Complete</Text>
-        <Text style={styles.title}>这一轮完成了</Text>
-        <Text style={styles.subtitle}>你的 get、收藏和批注都已经写入本地数据库。</Text>
+    <View style={[styles.wrap, { backgroundColor: theme.paper }] }>
+      <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Session Complete</Text>
+        <Text style={[styles.title, { color: theme.ink }]}>这一轮完成了</Text>
+        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>你的 get、收藏和批注都已经写入本地数据库。</Text>
         <View style={styles.grid}>
           <Metric label="浏览" value={summary.seen} />
           <Metric label="get" value={summary.got} />
@@ -27,10 +29,11 @@ export function SessionEndScreen({ summary, onHome, onContinue }: { summary: Ses
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
+  const theme = useAppTheme();
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[styles.metric, { backgroundColor: theme.paperSoft }] }>
+      <Text style={[styles.metricValue, { color: theme.ink }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: theme.inkMuted }]}>{label}</Text>
     </View>
   );
 }

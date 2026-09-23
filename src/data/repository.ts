@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS: Settings = {
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'local',
+  homeBackgroundImageMode: 'remote',
+  themeMode: 'system',
 };
 
 type CountRow = { count: number };
@@ -105,7 +107,13 @@ export async function getSettings(): Promise<Settings> {
     if (row.key === 'headerImage') next.headerImage = row.value || DEFAULT_SETTINGS.headerImage;
     if (row.key === 'fontFamily') next.fontFamily = row.value || DEFAULT_SETTINGS.fontFamily;
     if (row.key === 'cardHeaderImageMode') {
-      next.cardHeaderImageMode = row.value === 'remote' || row.value === 'hidden' ? row.value : DEFAULT_SETTINGS.cardHeaderImageMode;
+      next.cardHeaderImageMode = row.value === 'local' || row.value === 'remote' || row.value === 'hidden' ? row.value : DEFAULT_SETTINGS.cardHeaderImageMode;
+    }
+    if (row.key === 'homeBackgroundImageMode') {
+      next.homeBackgroundImageMode = row.value === 'local' || row.value === 'remote' ? row.value : DEFAULT_SETTINGS.homeBackgroundImageMode;
+    }
+    if (row.key === 'themeMode') {
+      next.themeMode = row.value === 'system' || row.value === 'light' || row.value === 'dark' ? row.value : DEFAULT_SETTINGS.themeMode;
     }
   }
   return next;

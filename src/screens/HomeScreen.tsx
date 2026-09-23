@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
 import { HOME_BACKGROUND_IMAGE_URL, withImageCacheBuster } from '../config/imageUrls';
-import { palette, shadow } from '../theme/tokens';
+import { heroImages } from '../theme/assets';
+import { useAppTheme } from '../theme/ThemeContext';
+import { palette, shadow, type AppTheme } from '../theme/tokens';
 
 type Props = {
   stats: Statistics;
@@ -20,9 +22,19 @@ const menu: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap; t
 ];
 
 const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const heroImageKeys = Object.keys(heroImages);
+
+function pickLocalHomeImage(): ImageSourcePropType {
+  const key = heroImageKeys[Math.floor(Math.random() * heroImageKeys.length)] ?? 'warm0';
+  return heroImages[key] ?? heroImages.warm0;
+}
 
 export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Props) {
-  const homeImage = React.useMemo(() => ({ uri: withImageCacheBuster(HOME_BACKGROUND_IMAGE_URL, `home-${Date.now()}-${Math.random().toString(36).slice(2)}`) }), []);
+  const theme = useAppTheme();
+  const homeImage = React.useMemo<ImageSourcePropType>(() => {
+    if (settings.homeBackgroundImageMode === 'local') return heroImages[settings.headerImage] ?? heroImages.warm0 ?? pickLocalHomeImage();
+    return { uri: withImageCacheBuster(HOME_BACKGROUND_IMAGE_URL, `home-${Date.now()}-${Math.random().toString(36).slice(2)}`) };
+  }, [settings.headerImage, settings.homeBackgroundImageMode]);
 
   const today = React.useMemo(() => {
     const date = new Date();
@@ -32,7 +44,6 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
       meta: `${week} · ${date.getFullYear()}年${date.getMonth() + 1}月`,
     };
   }, []);
-
 
   return (
     <ImageBackground source={homeImage} resizeMode="cover" style={styles.screen} imageStyle={styles.backgroundImage}>
@@ -60,7 +71,7 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
       </View>
 
       <View style={styles.bottomArea}>
-        <View style={styles.panel}>
+        <View style={[styles.panel, { backgroundColor: theme.dark ? 'rgba(27,26,23,0.95)' : 'rgba(255,255,255,0.94)' }] }>
           <View style={styles.continueRow}>
             <View style={styles.continueBox}>
               <Pressable onPress={onStartSession} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
@@ -68,16 +79,16 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
               </Pressable>
             </View>
             <Pressable onPress={() => onNavigate('knowledge')} style={styles.libraryBox}>
-              <Ionicons name="library-outline" size={30} color={palette.ink} />
-              <Text style={styles.libraryText}>知识库</Text>
+              <Ionicons name="library-outline" size={30} color={theme.ink} />
+              <Text style={[styles.libraryText, { color: theme.ink }]}>知识库</Text>
             </Pressable>
           </View>
 
           <View style={styles.quickGrid}>
-            <Quick icon="albums-outline" label="卡片" value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} />
-            <Quick icon="checkmark-circle-outline" label="已 Get" value={`${stats.gotCards}`} onPress={() => onNavigate('stats')} />
-            <Quick icon="heart-outline" label="收藏" value={`${stats.favoriteCards}`} onPress={() => onNavigate('favorites')} />
-            <Quick icon="chatbubble-ellipses-outline" label="批注" value={`${stats.annotatedCards}`} onPress={() => onNavigate('favorites')} />
+            <Quick icon="albums-outline" label="卡片" value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} theme={theme} />
+            <Quick icon="checkmark-circle-outline" label="已 Get" value={`${stats.gotCards}`} onPress={() => onNavigate('stats')} theme={theme} />
+            <Quick icon="heart-outline" label="收藏" value={`${stats.favoriteCards}`} onPress={() => onNavigate('favorites')} theme={theme} />
+            <Quick icon="chatbubble-ellipses-outline" label="批注" value={`${stats.annotatedCards}`} onPress={() => onNavigate('favorites')} theme={theme} />
           </View>
         </View>
       </View>
@@ -85,12 +96,12 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
   );
 }
 
-function Quick({ icon, label, value, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; onPress: () => void }) {
+function Quick({ icon, label, value, onPress, theme }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; onPress: () => void; theme: AppTheme }) {
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.quick, pressed && styles.pressed]}>
-      <Ionicons name={icon} size={28} color={palette.ink} />
-      <Text style={styles.quickValue}>{value}</Text>
-      <Text style={styles.quickLabel}>{label}</Text>
+      <Ionicons name={icon} size={28} color={theme.ink} />
+      <Text style={[styles.quickValue, { color: theme.inkMuted }]}>{value}</Text>
+      <Text style={[styles.quickLabel, { color: theme.ink }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -109,17 +120,11 @@ const styles = StyleSheet.create({
   signButton: { height: 43, borderRadius: 7, backgroundColor: '#F2B737', alignItems: 'center', justifyContent: 'center' },
   signText: { color: '#5D4218', fontSize: 18, fontWeight: '700' },
   bottomArea: { paddingHorizontal: 0, paddingBottom: 0 },
-  dots: { height: 28, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.9)' },
   panel: { minHeight: 226, paddingHorizontal: 32, paddingTop: 26, paddingBottom: 32, backgroundColor: 'rgba(255,255,255,0.94)', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   continueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
   continueBox: { flex: 1, alignItems: 'center', gap: 14 },
   continueButton: { width: '100%', maxWidth: 282, height: 62, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#405991', ...shadow.soft },
   continueText: { color: '#FFFFFF', fontSize: 26, letterSpacing: 7, fontWeight: '400' },
-  importLine: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
-  importText: { color: '#555555', fontSize: 15 },
-  unlockPill: { borderRadius: 18, backgroundColor: '#D4554D', paddingHorizontal: 13, paddingVertical: 7 },
-  unlockText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   libraryBox: { width: 64, alignItems: 'center', gap: 5 },
   libraryText: { color: '#222222', fontSize: 16 },
   message: { marginTop: 10, color: palette.blue, textAlign: 'center', fontSize: 13 },
@@ -129,3 +134,4 @@ const styles = StyleSheet.create({
   quickLabel: { color: '#333333', fontSize: 16 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
 });
+

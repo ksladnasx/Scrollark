@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { HomeScreen } from './screens/HomeScreen';
@@ -14,20 +14,31 @@ import { StatisticsScreen } from './screens/StatisticsScreen';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
 import { appFonts } from './theme/fonts';
+import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import { palette, radius } from './theme/tokens';
 
 const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, week: [], documents: 0 };
-const initialSettings: Settings = { sessionCardCount: 10, fontSize: 18, fontColor: '#171611', headerImage: 'warm0', fontFamily: 'LXGWWenKai', cardHeaderImageMode: 'local' };
+const initialSettings: Settings = {
+  sessionCardCount: 10,
+  fontSize: 18,
+  fontColor: '#171611',
+  headerImage: 'warm0',
+  fontFamily: 'LXGWWenKai',
+  cardHeaderImageMode: 'local',
+  homeBackgroundImageMode: 'remote',
+  themeMode: 'system',
+};
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
   home: { title: '首页', subtitle: 'Scrollark', icon: 'home-outline' },
   knowledge: { title: '万卷', subtitle: '本地知识库', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
   stats: { title: '今日签', subtitle: '阅读统计', icon: 'bar-chart-outline' },
-  settings: { title: '我的', subtitle: '字体与偏好', icon: 'person-circle-outline' },
+  settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },
 };
 
 export default function App() {
+  const systemScheme = useColorScheme();
   const [fontsLoaded, fontError] = useFonts(appFonts);
   const [route, setRoute] = React.useState<Route>({ name: 'tabs', tab: 'home' });
   const [ready, setReady] = React.useState(false);
@@ -37,6 +48,7 @@ export default function App() {
   const [cards, setCards] = React.useState<CardRecord[]>([]);
   const [favorites, setFavorites] = React.useState<CardRecord[]>([]);
   const [error, setError] = React.useState('');
+  const theme = resolveAppTheme(settings.themeMode, systemScheme);
 
   const refresh = React.useCallback(async () => {
     const [nextSettings, nextStats, nextDocs, nextCards, nextFavorites] = await Promise.all([
@@ -70,91 +82,102 @@ export default function App() {
 
   if (!loaded) {
     return (
-      <SafeAreaProvider>
-        <View style={styles.center}>
-          <ActivityIndicator color={palette.ink} />
-          <Text style={styles.centerText}>Scrollark 正在启动…</Text>
-        </View>
-      </SafeAreaProvider>
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <View style={[styles.center, { backgroundColor: theme.paper }] }>
+            <ActivityIndicator color={theme.ink} />
+            <Text style={[styles.centerText, { color: theme.inkMuted }]}>Scrollark 正在启动…</Text>
+          </View>
+        </SafeAreaProvider>
+      </ThemeProvider>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaProvider>
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>启动失败</Text>
-          <Text style={styles.centerText}>{error}</Text>
-        </View>
-      </SafeAreaProvider>
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <View style={[styles.center, { backgroundColor: theme.paper }] }>
+            <Text style={[styles.errorTitle, { color: theme.ink }]}>启动失败</Text>
+            <Text style={[styles.centerText, { color: theme.inkMuted }]}>{error}</Text>
+          </View>
+        </SafeAreaProvider>
+      </ThemeProvider>
     );
   }
 
   if (route.name === 'session') {
     return (
-      <SafeAreaProvider>
-        <StatusBar style="light" />
-        <SessionScreen
-          settings={settings}
-          onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
-          onChanged={() => void refresh()}
-          onEnd={(summary) => { void refresh(); setRoute({ name: 'sessionEnd', summary }); }}
-        />
-      </SafeAreaProvider>
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <StatusBar style={theme.dark ? 'light' : 'dark'} />
+          <SessionScreen
+            settings={settings}
+            onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
+            onChanged={() => void refresh()}
+            onEnd={(summary) => { void refresh(); setRoute({ name: 'sessionEnd', summary }); }}
+          />
+        </SafeAreaProvider>
+      </ThemeProvider>
     );
   }
 
   if (route.name === 'sessionEnd') {
     return (
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <SessionEndScreen
-          summary={route.summary}
-          onHome={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
-          onContinue={() => setRoute({ name: 'session' })}
-        />
-      </SafeAreaProvider>
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <StatusBar style={theme.dark ? 'light' : 'dark'} />
+          <SessionEndScreen
+            summary={route.summary}
+            onHome={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
+            onContinue={() => setRoute({ name: 'session' })}
+          />
+        </SafeAreaProvider>
+      </ThemeProvider>
     );
   }
 
   const activeTab = route.tab;
   return (
-    <SafeAreaProvider>
-      <StatusBar style={activeTab === 'home' ? 'light' : 'dark'} />
-      <View style={styles.app}>
-        {activeTab === 'home' ? (
-          <HomeScreen
-            stats={stats}
-            settings={settings}
-            onStartSession={() => setRoute({ name: 'session' })}
-            onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
-          />
-        ) : (
-          <SafeAreaView style={styles.page} edges={['top']}>
-            <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
-            <View style={styles.pageBody}>
-              {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings })}
-            </View>
-          </SafeAreaView>
-        )}
-      </View>
-    </SafeAreaProvider>
+    <ThemeProvider settings={settings}>
+      <SafeAreaProvider>
+        <StatusBar style={activeTab === 'home' || theme.dark ? 'light' : 'dark'} />
+        <View style={[styles.app, { backgroundColor: theme.paper }] }>
+          {activeTab === 'home' ? (
+            <HomeScreen
+              stats={stats}
+              settings={settings}
+              onStartSession={() => setRoute({ name: 'session' })}
+              onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
+            />
+          ) : (
+            <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
+              <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
+              <View style={styles.pageBody}>
+                {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings })}
+              </View>
+            </SafeAreaView>
+          )}
+        </View>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 
 function PageHeader({ tab, onBack }: { tab: TabKey; onBack: () => void }) {
   const meta = pageMeta[tab];
+  const theme = useAppTheme();
   return (
-    <View style={styles.headerBar}>
-      <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-        <Ionicons name="chevron-back" size={24} color={palette.ink} />
+    <View style={[styles.headerBar, { backgroundColor: theme.paper }] }>
+      <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
+        <Ionicons name="chevron-back" size={24} color={theme.ink} />
       </Pressable>
       <View style={styles.headerTitleWrap}>
-        <Text style={styles.headerSubtitle}>{meta.subtitle}</Text>
-        <Text style={styles.headerTitle}>{meta.title}</Text>
+        <Text style={[styles.headerSubtitle, { color: theme.inkMuted }]}>{meta.subtitle}</Text>
+        <Text style={[styles.headerTitle, { color: theme.ink }]}>{meta.title}</Text>
       </View>
-      <View style={styles.headerIcon}>
-        <Ionicons name={meta.icon} size={23} color={palette.ink} />
+      <View style={[styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <Ionicons name={meta.icon} size={23} color={theme.ink} />
       </View>
     </View>
   );

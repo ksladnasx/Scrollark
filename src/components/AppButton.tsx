@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type GestureResponderEvent, type ViewStyle } from 'react-native';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 type Props = {
@@ -13,16 +14,19 @@ type Props = {
 };
 
 export function AppButton({ label, onPress, icon, variant = 'dark', loading, style }: Props) {
+  const theme = useAppTheme();
+  const foreground = variant === 'dark' ? theme.paper : theme.ink;
+  const background = variant === 'dark' ? theme.accent : variant === 'light' ? theme.paperElevated : 'rgba(255,255,255,0.22)';
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
       disabled={loading}
-      style={({ pressed }) => [styles.base, styles[variant], pressed && styles.pressed, style]}
+      style={({ pressed }) => [styles.base, styles[variant], { backgroundColor: background }, variant === 'light' && { borderWidth: 1, borderColor: theme.line }, pressed && styles.pressed, style]}
     >
-      {loading ? <ActivityIndicator color={variant === 'dark' ? palette.paper : palette.ink} /> : null}
-      {!loading && icon ? <Ionicons name={icon} size={18} color={variant === 'dark' ? palette.paper : palette.ink} /> : null}
-      <Text style={[styles.label, variant === 'dark' ? styles.darkLabel : styles.lightLabel]}>{label}</Text>
+      {loading ? <ActivityIndicator color={foreground} /> : null}
+      {!loading && icon ? <Ionicons name={icon} size={18} color={foreground} /> : null}
+      <Text style={[styles.label, { color: foreground }]}>{label}</Text>
     </Pressable>
   );
 }

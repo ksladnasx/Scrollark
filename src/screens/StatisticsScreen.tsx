@@ -1,22 +1,24 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { Statistics } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 export function StatisticsScreen({ stats }: { stats: Statistics }) {
+  const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
 
   return (
-    <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Statistics</Text>
-        <Text style={styles.title}>统计</Text>
-        <Text style={styles.subtitle}>统计来自真实 get 事件，不使用写死数据。</Text>
+        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Statistics</Text>
+        <Text style={[styles.title, { color: theme.ink }]}>统计</Text>
+        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>统计来自真实 get 事件，不使用写死数据。</Text>
       </View>
 
-      <View style={styles.heroStat}>
-        <Text style={styles.heroValue}>{stats.todayGets}</Text>
+      <View style={[styles.heroStat, { backgroundColor: theme.accent }] }>
+        <Text style={[styles.heroValue, { color: theme.paper }]}>{stats.todayGets}</Text>
         <Text style={styles.heroLabel}>今日吸收卡片</Text>
         <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
         <Text style={styles.progressText}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
@@ -29,16 +31,16 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
         <Metric label="批注" value={stats.annotatedCards} />
       </View>
 
-      <View style={styles.chartCard}>
-        <Text style={styles.sectionTitle}>最近 7 天 get 趋势</Text>
+      <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+        <Text style={[styles.sectionTitle, { color: theme.ink }]}>最近 7 天 get 趋势</Text>
         <View style={styles.chart}>
           {stats.week.map((day, index) => (
             <View key={`week-${day.day}-${index}`} style={styles.barColumn}>
-              <View style={styles.barTrack}>
-                <View style={[styles.bar, { height: `${Math.max(7, (day.count / max) * 100)}%` }]} />
+              <View style={[styles.barTrack, { backgroundColor: theme.paperSoft }] }>
+                <View style={[styles.bar, { height: `${Math.max(7, (day.count / max) * 100)}%`, backgroundColor: theme.ink }]} />
               </View>
-              <Text style={styles.barValue}>{day.count}</Text>
-              <Text style={styles.barLabel}>{day.day}</Text>
+              <Text style={[styles.barValue, { color: theme.ink }]}>{day.count}</Text>
+              <Text style={[styles.barLabel, { color: theme.inkMuted }]}>{day.day}</Text>
             </View>
           ))}
         </View>
@@ -48,10 +50,11 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
+  const theme = useAppTheme();
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[styles.metric, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+      <Text style={[styles.metricValue, { color: theme.ink }]}>{value}</Text>
+      <Text style={[styles.metricLabel, { color: theme.inkMuted }]}>{label}</Text>
     </View>
   );
 }

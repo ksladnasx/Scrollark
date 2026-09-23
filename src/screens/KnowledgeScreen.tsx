@@ -6,11 +6,13 @@ import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { importMarkdownDocument } from '../data/repository';
 import type { CardRecord, DocumentRecord, Settings } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 type Props = { documents: DocumentRecord[]; cards: CardRecord[]; settings: Settings; onImported: () => void; onStartSession: () => void };
 
 export function KnowledgeScreen({ documents, cards, settings, onImported, onStartSession }: Props) {
+  const theme = useAppTheme();
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState('');
   const [selectedCard, setSelectedCard] = React.useState<CardRecord | null>(null);
@@ -31,11 +33,11 @@ export function KnowledgeScreen({ documents, cards, settings, onImported, onStar
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Library</Text>
-        <Text style={styles.title}>知识库</Text>
-        <Text style={styles.subtitle}>所有 Markdown 原文、解析结果和知识卡片都保存在本地 SQLite 与应用文档目录中。</Text>
+        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Library</Text>
+        <Text style={[styles.title, { color: theme.ink }]}>知识库</Text>
+        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>所有 Markdown 原文、解析结果和知识卡片都保存在本地 SQLite 与应用文档目录中。</Text>
       </View>
       <View style={styles.actions}>
         <AppButton label="导入 .md" icon="add-outline" onPress={importDoc} loading={busy} />
@@ -43,19 +45,19 @@ export function KnowledgeScreen({ documents, cards, settings, onImported, onStar
       </View>
       {message ? <Text style={styles.message}>{message}</Text> : null}
 
-      <Text style={styles.sectionTitle}>文档</Text>
+      <Text style={[styles.sectionTitle, { color: theme.ink }]}>文档</Text>
       {documents.length === 0 ? <Empty title="还没有文档" body="从手机本地选择 Markdown 文件后，Scrollark 会按三级标题生成卡片。" /> : null}
       {documents.map((doc, index) => (
-        <View key={`document-${doc.id}-${index}`} style={styles.docRow}>
-          <View style={styles.docIcon}><Ionicons name="document-text-outline" size={19} color={palette.ink} /></View>
+        <View key={`document-${doc.id}-${index}`} style={[styles.docRow, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+          <View style={[styles.docIcon, { backgroundColor: theme.paperSoft }] }><Ionicons name="document-text-outline" size={19} color={theme.ink} /></View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.docTitle}>{doc.title}</Text>
-            <Text style={styles.docMeta}>{doc.fileName} · {doc.cardCount} 张卡片</Text>
+            <Text style={[styles.docTitle, { color: theme.ink }]}>{doc.title}</Text>
+            <Text style={[styles.docMeta, { color: theme.inkMuted }]}>{doc.fileName} · {doc.cardCount} 张卡片</Text>
           </View>
         </View>
       ))}
 
-      <Text style={styles.sectionTitle}>最近卡片</Text>
+      <Text style={[styles.sectionTitle, { color: theme.ink }]}>最近卡片</Text>
       {cards.slice(0, 5).map((card, index) => (
         <Pressable
           key={`recent-card-${card.id}-${card.documentId}-${card.sortOrder}-${index}`}
@@ -71,11 +73,12 @@ export function KnowledgeScreen({ documents, cards, settings, onImported, onStar
 }
 
 export function Empty({ title, body }: { title: string; body: string }) {
+  const theme = useAppTheme();
   return (
-    <View style={styles.empty}>
-      <Ionicons name="file-tray-outline" size={28} color={palette.inkMuted} />
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptyBody}>{body}</Text>
+    <View style={[styles.empty, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+      <Ionicons name="file-tray-outline" size={28} color={theme.inkMuted} />
+      <Text style={[styles.emptyTitle, { color: theme.ink }]}>{title}</Text>
+      <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>{body}</Text>
     </View>
   );
 }

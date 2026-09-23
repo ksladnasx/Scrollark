@@ -12,7 +12,8 @@
     "android": {
       "package": "com.scrollark.app",
       "adaptiveIcon": {
-        "backgroundColor": "#11110F"
+        "backgroundColor": "#11110F",
+        "foregroundImage": "./img/softicon.png"
       }
     },
     "plugins": [
@@ -20,6 +21,7 @@
       "expo-document-picker",
       "expo-asset",
       "expo-font"
-    ]
+    ],
+    "icon": "./img/softicon.png"
   }
 }

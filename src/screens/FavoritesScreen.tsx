@@ -3,19 +3,21 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import type { CardRecord, Settings } from '../domain/types';
+import { useAppTheme } from '../theme/ThemeContext';
 import { palette } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
 
 export function FavoritesScreen({ cards, settings }: { cards: CardRecord[]; settings: Settings }) {
+  const theme = useAppTheme();
   const [selectedCard, setSelectedCard] = React.useState<CardRecord | null>(null);
 
   return (
     <>
-    <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Saved</Text>
-        <Text style={styles.title}>收藏</Text>
-        <Text style={styles.subtitle}>所有收藏状态都会落到本地数据库，重启应用后仍然保留。</Text>
+        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Saved</Text>
+        <Text style={[styles.title, { color: theme.ink }]}>收藏</Text>
+        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>所有收藏状态都会落到本地数据库，重启应用后仍然保留。</Text>
       </View>
       {cards.length === 0 ? <Empty title="还没有收藏" body="在刷卡时点击收藏按钮，重要内容会出现在这里。" /> : null}
       {cards.map((card, index) => (
