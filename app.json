@@ -14,7 +14,13 @@
       "adaptiveIcon": {
         "backgroundColor": "#11110F",
         "foregroundImage": "./img/softicon.png"
-      }
+      },
+      "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
     },
     "plugins": [
       "expo-sqlite",
@@ -32,6 +38,11 @@
         }
       ]
     ],
-    "icon": "./img/softicon.png"
+    "icon": "./img/softicon.png",
+    "extra": {
+      "eas": {
+        "projectId": "63d083b0-91c9-4eb2-aa17-5104f82d36f3"
+      }
+    }
   }
 }
