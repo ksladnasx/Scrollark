@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: Settings = {
   fontColor: '#171611',
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
+  cardHeaderImageMode: 'local',
 };
 
 type CountRow = { count: number };
@@ -103,6 +104,9 @@ export async function getSettings(): Promise<Settings> {
     if (row.key === 'fontColor') next.fontColor = row.value || DEFAULT_SETTINGS.fontColor;
     if (row.key === 'headerImage') next.headerImage = row.value || DEFAULT_SETTINGS.headerImage;
     if (row.key === 'fontFamily') next.fontFamily = row.value || DEFAULT_SETTINGS.fontFamily;
+    if (row.key === 'cardHeaderImageMode') {
+      next.cardHeaderImageMode = row.value === 'remote' || row.value === 'hidden' ? row.value : DEFAULT_SETTINGS.cardHeaderImageMode;
+    }
   }
   return next;
 }

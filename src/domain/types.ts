@@ -1,4 +1,5 @@
 export type TabKey = 'home' | 'knowledge' | 'favorites' | 'stats' | 'settings';
+export type CardHeaderImageMode = 'local' | 'remote' | 'hidden';
 export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session' } | { name: 'sessionEnd'; summary: SessionSummary };
 
 export type DocumentRecord = {
@@ -38,6 +39,7 @@ export type Settings = {
   fontColor: string;
   headerImage: string;
   fontFamily: string;
+  cardHeaderImageMode: CardHeaderImageMode;
 };
 
 export type Statistics = {

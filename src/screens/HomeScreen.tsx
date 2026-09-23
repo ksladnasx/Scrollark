@@ -2,14 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
-import { importMarkdownDocument } from '../data/repository';
-import { heroImages } from '../theme/assets';
+import { HOME_BACKGROUND_IMAGE_URL, withImageCacheBuster } from '../config/imageUrls';
 import { palette, shadow } from '../theme/tokens';
 
 type Props = {
   stats: Statistics;
   settings: Settings;
-  onImported: () => void;
   onStartSession: () => void;
   onNavigate: (tab: TabKey) => void;
 };
@@ -22,15 +20,9 @@ const menu: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap; t
 ];
 
 const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-const heroKeys = Object.keys(heroImages);
 
-export function HomeScreen({ stats, settings, onImported, onStartSession, onNavigate }: Props) {
-  const [importing, setImporting] = React.useState(false);
-  const [message, setMessage] = React.useState('');
-  const homeImage = React.useMemo(() => {
-    const key = heroKeys[Math.floor(Math.random() * heroKeys.length)] ?? 'warm0';
-    return heroImages[key] ?? heroImages.warm0;
-  }, []);
+export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Props) {
+  const homeImage = React.useMemo(() => ({ uri: withImageCacheBuster(HOME_BACKGROUND_IMAGE_URL, `home-${Date.now()}-${Math.random().toString(36).slice(2)}`) }), []);
 
   const today = React.useMemo(() => {
     const date = new Date();
@@ -41,21 +33,6 @@ export function HomeScreen({ stats, settings, onImported, onStartSession, onNavi
     };
   }, []);
 
-  const importDoc = async () => {
-    try {
-      setImporting(true);
-      setMessage('');
-      const imported = await importMarkdownDocument();
-      if (imported) {
-        setMessage(`已导入《${imported.document.title}》，生成 ${imported.cards} 张卡片`);
-        onImported();
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '导入失败，请重试');
-    } finally {
-      setImporting(false);
-    }
-  };
 
   return (
     <ImageBackground source={homeImage} resizeMode="cover" style={styles.screen} imageStyle={styles.backgroundImage}>
@@ -83,27 +60,18 @@ export function HomeScreen({ stats, settings, onImported, onStartSession, onNavi
       </View>
 
       <View style={styles.bottomArea}>
-        <View style={styles.dots}>{[0, 1, 2].map((dot) => <View key={`home-dot-${dot}`} style={styles.dot} />)}</View>
         <View style={styles.panel}>
           <View style={styles.continueRow}>
             <View style={styles.continueBox}>
               <Pressable onPress={onStartSession} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
                 <Text style={[styles.continueText, { fontFamily: settings.fontFamily }]}>继续阅读</Text>
               </Pressable>
-              <View style={styles.importLine}>
-                <Text style={[styles.importText, { fontFamily: settings.fontFamily }]}>? Markdown ??????</Text>
-                <Pressable onPress={importDoc} disabled={importing} style={styles.unlockPill}>
-                  <Text style={styles.unlockText}>{importing ? '???' : '??'}</Text>
-                </Pressable>
-              </View>
             </View>
             <Pressable onPress={() => onNavigate('knowledge')} style={styles.libraryBox}>
               <Ionicons name="library-outline" size={30} color={palette.ink} />
               <Text style={styles.libraryText}>知识库</Text>
             </Pressable>
           </View>
-
-          {message ? <Text style={styles.message} numberOfLines={2}>{message}</Text> : null}
 
           <View style={styles.quickGrid}>
             <Quick icon="albums-outline" label="卡片" value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} />

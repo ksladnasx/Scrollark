@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
-import { cardImages } from '../theme/assets';
 import { palette, radius, shadow } from '../theme/tokens';
+import { CardHeaderImage } from './CardHeaderImage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
 type Props = {
@@ -13,14 +13,6 @@ type Props = {
   onClose?: () => void;
   footer?: React.ReactNode;
 };
-
-const cardImageKeys = Object.keys(cardImages);
-
-function pickCardImage(card: CardRecord) {
-  const seed = Math.abs(card.id * 17 + card.documentId * 31 + card.sortOrder * 7);
-  const key = cardImageKeys[seed % cardImageKeys.length] ?? 'warm0';
-  return cardImages[key] ?? cardImages.warm0;
-}
 
 function normalizeTitle(value: string) {
   return value.replace(/^[#\s]+/, '').replace(/[\s#*_`>\[\]]/g, '').trim().toLowerCase();
@@ -82,14 +74,21 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
 
   return (
     <View style={[styles.card, compact && styles.compactCard]}>
-      <ImageBackground source={pickCardImage(card)} resizeMode="cover" imageStyle={styles.headerImage} style={[styles.header, compact && styles.compactHeader]}>
-        <View style={styles.headerScrim} />
-        {onClose ? (
-          <Pressable onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
-            <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
-          </Pressable>
-        ) : null}
-      </ImageBackground>
+      {settings.cardHeaderImageMode !== 'hidden' ? (
+        <CardHeaderImage
+          mode={settings.cardHeaderImageMode}
+          cardKey={`${card.id}-${card.documentId}-${card.sortOrder}`}
+          imageStyle={styles.headerImage}
+          style={[styles.header, compact && styles.compactHeader]}
+        >
+          <View style={styles.headerScrim} />
+          {onClose ? (
+            <Pressable onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
+              <Ionicons name="chevron-back" size={24} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+        </CardHeaderImage>
+      ) : null}
 
       {compact ? (
         <View style={styles.compactContent}>{body}</View>

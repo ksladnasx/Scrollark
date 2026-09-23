@@ -17,7 +17,7 @@ import { appFonts } from './theme/fonts';
 import { palette, radius } from './theme/tokens';
 
 const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, week: [], documents: 0 };
-const initialSettings: Settings = { sessionCardCount: 10, fontSize: 18, fontColor: '#171611', headerImage: 'warm0', fontFamily: 'LXGWWenKai' };
+const initialSettings: Settings = { sessionCardCount: 10, fontSize: 18, fontColor: '#171611', headerImage: 'warm0', fontFamily: 'LXGWWenKai', cardHeaderImageMode: 'local' };
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
   home: { title: '首页', subtitle: 'Scrollark', icon: 'home-outline' },
@@ -126,7 +126,6 @@ export default function App() {
           <HomeScreen
             stats={stats}
             settings={settings}
-            onImported={() => void refresh()}
             onStartSession={() => setRoute({ name: 'session' })}
             onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
           />

@@ -52,13 +52,12 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset }: Props) 
         ].map(([label, color], index) => <Chip key={`color-${color}-${index}`} label={label} active={settings.fontColor === color} onPress={() => update('fontColor', color)} />)}
       </SettingBlock>
 
-      <SettingBlock title="首页头图" description="选择应用进入时的沉浸式头图，同时会作为卡片 Header 的风格参考。">
+      <SettingBlock title="卡片头图" description="控制刷卡页面与卡片详情顶部图片的来源。">
         {[
-          ['暖纸 1', 'warm0'],
-          ['暖纸 2', 'warm1'],
-          ['夜色 1', 'dark0'],
-          ['夜色 2', 'dark1'],
-        ].map(([label, key], index) => <Chip key={`header-${key}-${index}`} label={label} active={settings.headerImage === key} onPress={() => update('headerImage', key)} />)}
+          ['本地随机', 'local'],
+          ['网络图片', 'remote'],
+          ['关闭图片', 'hidden'],
+        ].map(([label, mode], index) => <Chip key={`card-header-${mode}-${index}`} label={label} active={settings.cardHeaderImageMode === mode} onPress={() => update('cardHeaderImageMode', mode as Settings['cardHeaderImageMode'])} />)}
       </SettingBlock>
 
       <AppButton label="清空本地数据" icon="trash-outline" variant="light" onPress={confirmReset} />

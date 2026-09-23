@@ -33,6 +33,8 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
   const [annotationCard, setAnnotationCard] = React.useState<CardRecord | null>(null);
   const [draftNote, setDraftNote] = React.useState('');
   const listRef = React.useRef<FlatList<SessionItem>>(null);
+  const snapTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastOuterOffsetRef = React.useRef(0);
   const finishedRef = React.useRef(false);
   const gotActions = React.useRef(new Set<number>()).current;
   const favoriteActions = React.useRef(new Set<number>()).current;
@@ -118,15 +120,67 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
 
   const sessionItems = React.useMemo<SessionItem[]>(() => [...cards, { type: 'end', id: 'end' }], [cards]);
 
-  const onMomentumScrollEnd = React.useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
-    const nextIndex = Math.round(event.nativeEvent.contentOffset.y / Math.max(1, pageHeight));
+  const clearSnapTimer = React.useCallback(() => {
+    if (snapTimerRef.current) {
+      clearTimeout(snapTimerRef.current);
+      snapTimerRef.current = null;
+    }
+  }, []);
+
+  const settleToPage = React.useCallback((offsetY: number, animated = true) => {
+    const page = Math.max(1, pageHeight);
+    const maxIndex = Math.max(0, sessionItems.length - 1);
+    const nextIndex = Math.max(0, Math.min(maxIndex, Math.round(offsetY / page)));
+    const targetOffset = nextIndex * page;
+
+    clearSnapTimer();
+    lastOuterOffsetRef.current = targetOffset;
+
+    if (Math.abs(offsetY - targetOffset) > 1) {
+      listRef.current?.scrollToOffset({ offset: targetOffset, animated });
+    }
+
     if (nextIndex >= cards.length) {
-      setIndex(cards.length - 1);
+      setIndex(Math.max(0, cards.length - 1));
       setTimeout(finish, 120);
       return;
     }
-    setIndex(Math.max(0, nextIndex));
-  }, [cards.length, finish, pageHeight]);
+    setIndex(nextIndex);
+  }, [cards.length, clearSnapTimer, finish, pageHeight, sessionItems.length]);
+
+  const scheduleSnapBack = React.useCallback((offsetY: number) => {
+    const page = Math.max(1, pageHeight);
+    const maxIndex = Math.max(0, sessionItems.length - 1);
+    const nearestOffset = Math.max(0, Math.min(maxIndex, Math.round(offsetY / page))) * page;
+
+    clearSnapTimer();
+    lastOuterOffsetRef.current = offsetY;
+    if (Math.abs(offsetY - nearestOffset) <= 1) return;
+
+    snapTimerRef.current = setTimeout(() => {
+      settleToPage(lastOuterOffsetRef.current, true);
+    }, 120);
+  }, [clearSnapTimer, pageHeight, sessionItems.length, settleToPage]);
+
+  React.useEffect(() => clearSnapTimer, [clearSnapTimer]);
+
+  const onListScroll = React.useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    scheduleSnapBack(event.nativeEvent.contentOffset.y);
+  }, [scheduleSnapBack]);
+
+  const onMomentumScrollEnd = React.useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    settleToPage(event.nativeEvent.contentOffset.y, true);
+  }, [settleToPage]);
+
+  const onScrollEndDrag = React.useCallback((event: { nativeEvent: { contentOffset: { y: number }; velocity?: { y?: number } } }) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    const velocityY = Math.abs(event.nativeEvent.velocity?.y ?? 0);
+    if (velocityY < 0.05) {
+      settleToPage(offsetY, true);
+      return;
+    }
+    scheduleSnapBack(offsetY);
+  }, [scheduleSnapBack, settleToPage]);
 
   const renderFooter = React.useCallback((card: CardRecord) => (
     <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8) }] }>
@@ -144,7 +198,6 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
       </Pressable>
       <Pressable onPress={onClose} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
         <Ionicons name="ellipsis-horizontal" size={25} color={palette.ink} />
-        <Text style={styles.actionText}>更多</Text>
       </Pressable>
     </View>
   ), [handleFavorite, handleGet, insets.bottom, onClose, openAnnotation]);
@@ -210,6 +263,11 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
         decelerationRate="fast"
         disableIntervalMomentum
         overScrollMode="never"
+        onScroll={onListScroll}
+        scrollEventThrottle={16}
+        onScrollBeginDrag={clearSnapTimer}
+        onScrollEndDrag={onScrollEndDrag}
+        onMomentumScrollBegin={clearSnapTimer}
         onMomentumScrollEnd={onMomentumScrollEnd}
         getItemLayout={(_, itemIndex) => ({ length: pageHeight, offset: pageHeight * itemIndex, index: itemIndex })}
         initialNumToRender={2}
