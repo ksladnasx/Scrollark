@@ -2,8 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
-import { HOME_BACKGROUND_IMAGE_URL, withImageCacheBuster } from '../config/imageUrls';
 import { heroImages } from '../theme/assets';
+import { getDailyHomeBackgroundImageUri } from '../utils/homeBackground';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, shadow, type AppTheme } from '../theme/tokens';
 
@@ -31,10 +31,22 @@ function pickLocalHomeImage(): ImageSourcePropType {
 
 export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Props) {
   const theme = useAppTheme();
-  const homeImage = React.useMemo<ImageSourcePropType>(() => {
-    if (settings.homeBackgroundImageMode === 'local') return heroImages[settings.headerImage] ?? heroImages.warm0 ?? pickLocalHomeImage();
-    return { uri: withImageCacheBuster(HOME_BACKGROUND_IMAGE_URL, `home-${Date.now()}-${Math.random().toString(36).slice(2)}`) };
-  }, [settings.headerImage, settings.homeBackgroundImageMode]);
+  const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
+  const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(fallbackHomeImage);
+
+  React.useEffect(() => {
+    let alive = true;
+    getDailyHomeBackgroundImageUri()
+      .then((uri) => {
+        if (alive) setHomeImage({ uri });
+      })
+      .catch(() => {
+        if (alive) setHomeImage(fallbackHomeImage);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [fallbackHomeImage]);
 
   const today = React.useMemo(() => {
     const date = new Date();
