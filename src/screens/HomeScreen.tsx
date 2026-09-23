@@ -61,7 +61,7 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
 
         <View style={styles.dateCard}>
           <View>
-            <Text style={styles.dateNumber}>{today.day}</Text>
+            <View ><Text style={styles.dateNumber}>{today.day}</Text></View>
             <Text style={styles.dateMeta}>{today.meta}</Text>
           </View>
           <Pressable onPress={() => onNavigate('stats')} style={({ pressed }) => [styles.signButton, pressed && styles.pressed]}>
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   menuItem: { alignItems: 'center', minWidth: 44, gap: 3 },
   menuText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
   dateCard: { alignSelf: 'flex-end', marginTop: 'auto', width: 164, borderRadius: 10, padding: 14, backgroundColor: 'rgba(111,105,72,0.72)', gap: 12 },
-  dateNumber: { color: '#FFFFFF', fontSize: 56, lineHeight: 60, fontWeight: '300' },
+  dateNumber: { color: '#FFFFFF', fontSize: 56, lineHeight: 60, fontWeight: '300', textAlign: 'center' },
   dateMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 16 },
   signButton: { height: 43, borderRadius: 7, backgroundColor: '#F2B737', alignItems: 'center', justifyContent: 'center' },
   signText: { color: '#5D4218', fontSize: 18, fontWeight: '700' },

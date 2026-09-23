@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
@@ -56,10 +56,36 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
   const textColor = readableCardTextColor(theme, settings.fontColor);
+  const [showHeaderTitle, setShowHeaderTitle] = React.useState(false);
+  const showHeaderTitleRef = React.useRef(false);
+  const titleHeightRef = React.useRef(42);
+
+  React.useEffect(() => {
+    showHeaderTitleRef.current = false;
+    setShowHeaderTitle(false);
+  }, [card.id, settings.cardHeaderImageMode]);
+
+  const handleTitleLayout = React.useCallback((event: { nativeEvent: { layout: { height: number } } }) => {
+    titleHeightRef.current = event.nativeEvent.layout.height;
+  }, []);
+
+  const handleContentScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (compact || settings.cardHeaderImageMode !== 'hidden') return;
+    const titleOutOfViewOffset = 16 + titleHeightRef.current + 6;
+    const next = event.nativeEvent.contentOffset.y >= titleOutOfViewOffset;
+    if (next !== showHeaderTitleRef.current) {
+      showHeaderTitleRef.current = next;
+      setShowHeaderTitle(next);
+    }
+  }, [compact, settings.cardHeaderImageMode]);
 
   const body = (
     <>
-      <Text style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 2 : undefined}>
+      <Text
+        onLayout={compact ? undefined : handleTitleLayout}
+        style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]}
+        numberOfLines={compact ? 2 : undefined}
+      >
         {title}
       </Text>
       {meta ? <Text style={[styles.meta, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 1 : undefined}>{meta}</Text> : null}
@@ -102,14 +128,28 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
               <Ionicons name="chevron-back" size={23} color={theme.ink} />
             </Pressable>
           ) : null}
-          <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
+          {showHeaderTitle && !compact ? (
+            <View style={styles.textHeaderContent}>
+              <Text style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={1}>{title}</Text>
+              {meta ? <Text style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>{meta}</Text> : null}
+            </View>
+          ) : (
+            <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
+          )}
         </View>
       )}
 
       {compact ? (
         <View style={[styles.compactContent, { backgroundColor: theme.paperElevated }]}>{body}</View>
       ) : (
-        <ScrollView style={[styles.content, { backgroundColor: theme.card }]} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        <ScrollView
+          style={[styles.content, { backgroundColor: theme.card }]}
+          contentContainerStyle={styles.contentInner}
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+          scrollEventThrottle={16}
+          onScroll={handleContentScroll}
+        >
           {body}
         </ScrollView>
       )}
@@ -171,6 +211,20 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.1,
     textTransform: 'uppercase',
+  },
+  textHeaderContent: {
+    marginLeft: 58,
+    gap: 3,
+  },
+  textHeaderTitle: {
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '900',
+  },
+  textHeaderSource: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
   },
   textCloseButton: {
     position: 'absolute',

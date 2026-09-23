@@ -46,13 +46,14 @@ export function parseMarkdownToCards(markdown: string, fallbackTitle: string): P
         const level = match[1].length;
         const title = cleanTitle(match[2]);
         if (level === 1) {
+          flush();
           h1 = title;
-          if (active) active.lines.push(line);
+          h2 = '未分组';
           continue;
         }
         if (level === 2) {
+          flush();
           h2 = title;
-          if (active) active.lines.push(line);
           continue;
         }
         if (level === 3) {

@@ -186,20 +186,22 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
 
   const renderFooter = React.useCallback((card: CardRecord) => (
     <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8), backgroundColor: theme.card }] }>
+      
+      
+      <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, card.isGot ? [styles.getButtonActive, { backgroundColor: theme.ink, borderColor: theme.ink }] : null, pressed && styles.pressed]}>
+        <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? theme.paper : theme.ink} />
+        <Text style={[styles.getText, card.isGot ? styles.getTextActive : null, { color: card.isGot ? theme.paper : theme.ink }]}>{card.isGot ? '已 get' : 'get'}</Text>
+      </Pressable><Pressable onPress={() => handleFavorite(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
+        <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? theme.red : theme.ink} />
+        <Text style={[styles.actionText, { color: theme.inkMuted }]}>收藏</Text>
+      </Pressable>
       <Pressable onPress={() => openAnnotation(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
         <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? theme.red : theme.ink} />
         <Text style={[styles.actionText, { color: theme.inkMuted }]}>批注</Text>
       </Pressable>
-      <Pressable onPress={() => handleFavorite(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? theme.red : theme.ink} />
-        <Text style={[styles.actionText, { color: theme.inkMuted }]}>收藏</Text>
-      </Pressable>
-      <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, card.isGot ? [styles.getButtonActive, { backgroundColor: theme.ink, borderColor: theme.ink }] : null, pressed && styles.pressed]}>
-        <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? theme.paper : theme.ink} />
-        <Text style={[styles.getText, card.isGot ? styles.getTextActive : null, { color: card.isGot ? theme.paper : theme.ink }]}>{card.isGot ? '已 get' : 'get'}</Text>
-      </Pressable>
       <Pressable onPress={onClose} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name="ellipsis-horizontal" size={25} color={theme.ink} />
+        <Ionicons name="home" size={25} color={theme.ink} />
+        <Text style={[styles.actionText, { color: theme.inkMuted }]}>首页</Text>
       </Pressable>
     </View>
   ), [handleFavorite, handleGet, insets.bottom, onClose, openAnnotation, theme]);
