@@ -320,7 +320,7 @@ Scrollark 的核心导入规则位于 `src/utils/markdown.ts` 的 `parseMarkdown
 
 ## 版本信息
 
-当前项目版本：`1.0.0`
+当前项目版本：`2.0.0`
 
 详见 `package.json` 与 `app.json`。
 
