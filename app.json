@@ -36,7 +36,8 @@
             "photo"
           ]
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "icon": "./img/softicon.png",
     "extra": {

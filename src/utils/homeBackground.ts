@@ -1,6 +1,7 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
-import { HOME_BACKGROUND_IMAGE_URL, withImageCacheBuster } from '../config/imageUrls';
+import { HOME_BACKGROUND_IMAGE_URL, HOME_BACKGROUND_IMAGE_URLS, withImageCacheBuster } from '../config/imageUrls';
+import { downloadImageFile } from './imageDownload';
 
 type HomeBackgroundMeta = {
   date: string;
@@ -113,16 +114,46 @@ function createTargetFile(dir: Directory, fileName: string, mimeType: string) {
   }
 }
 
-async function downloadHomeBackground(dir: Directory, date: string, sourceUrl: string = HOME_BACKGROUND_IMAGE_URL) {
-  const name = `home-${date}-${Date.now()}.jpg`;
-  const file = new File(dir, name);
-  if (file.exists) file.delete();
-  const requestUrl = withImageCacheBuster(sourceUrl, `home-${date}-${Date.now()}`);
-  return File.downloadFileAsync(requestUrl, file, { idempotent: true });
+type HomeBackgroundDownload = { file: File; sourceUrl: string };
+
+// 先请求指定源，失败（含返回 0 字节）后自动回退到其余壁纸源。
+async function downloadHomeBackground(dir: Directory, date: string, sourceUrl: string = HOME_BACKGROUND_IMAGE_URL): Promise<HomeBackgroundDownload> {
+  const sources = [sourceUrl, ...HOME_BACKGROUND_IMAGE_URLS.filter((url) => url !== sourceUrl)];
+  let lastError: unknown = null;
+
+  for (const source of sources) {
+    const name = `home-${date}-${Date.now()}.jpg`;
+    const file = new File(dir, name);
+    if (file.exists) file.delete();
+    try {
+      const downloaded = await downloadImageFile(withImageCacheBuster(source, `home-${date}-${Date.now()}`), file);
+      return { file: downloaded, sourceUrl: source };
+    } catch (error) {
+      lastError = error;
+      try {
+        file.delete();
+      } catch {
+        // 清理失败的半截文件不影响后续源的重试。
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('壁纸下载失败');
 }
 
 export function getDefaultHomeBackgroundDownloadDirectoryUri() {
   return getDefaultDownloadDirectory().uri;
+}
+
+// 同步读取最近一次缓存的本机壁纸（可能是昨天的）：用于打开应用时立即显示，
+// 避免先闪一张随机占位图、等每日下载完成后再突变。
+export function getCachedHomeBackgroundImageUri(): string | null {
+  try {
+    const meta = readMeta(getHomeBackgroundDir());
+    return getCachedFile(meta)?.uri ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function getReadableHomeBackgroundDownloadDirectory(directoryUri?: string) {
@@ -198,9 +229,9 @@ export async function getDailyHomeBackgroundImageUri(sourceUrl: string = HOME_BA
 
   try {
     const downloaded = await downloadHomeBackground(dir, date, sourceUrl);
-    cleanupOldImages(dir, downloaded.name);
-    writeMeta(dir, { date, uri: downloaded.uri, updatedAt: new Date().toISOString(), sourceUrl });
-    return downloaded.uri;
+    cleanupOldImages(dir, downloaded.file.name);
+    writeMeta(dir, { date, uri: downloaded.file.uri, updatedAt: new Date().toISOString(), sourceUrl: downloaded.sourceUrl });
+    return downloaded.file.uri;
   } catch (error) {
     if (cached) return cached.uri;
     throw error;
@@ -215,9 +246,9 @@ export async function refreshHomeBackgroundImageUri(sourceUrl: string = HOME_BAC
 
   try {
     const downloaded = await downloadHomeBackground(dir, date, sourceUrl);
-    cleanupOldImages(dir, downloaded.name);
-    writeMeta(dir, { date, uri: downloaded.uri, updatedAt: new Date().toISOString(), sourceUrl });
-    return downloaded.uri;
+    cleanupOldImages(dir, downloaded.file.name);
+    writeMeta(dir, { date, uri: downloaded.file.uri, updatedAt: new Date().toISOString(), sourceUrl: downloaded.sourceUrl });
+    return downloaded.file.uri;
   } catch (error) {
     if (cached) return cached.uri;
     throw error;

@@ -1,8 +1,7 @@
 export type TabKey = 'home' | 'knowledge' | 'favorites' | 'stats' | 'settings';
 export type CardHeaderImageMode = 'local' | 'remote' | 'hidden';
-export type HomeBackgroundImageMode = 'local' | 'remote';
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session' } | { name: 'sessionEnd'; summary: SessionSummary };
+export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' };
 
 export type DocumentRecord = {
   id: number;
@@ -43,7 +42,9 @@ export type Settings = {
   headerImage: string;
   fontFamily: string;
   cardHeaderImageMode: CardHeaderImageMode;
-  homeBackgroundImageMode: HomeBackgroundImageMode;
+  cardBackgroundImageUrl: string;
+  cardImagePoolSize: number;
+  dailyGetGoal: number;
   homeBackgroundImageUrl: string;
   homeBackgroundDownloadDirectory: string;
   themeMode: ThemeMode;
@@ -55,6 +56,8 @@ export type Statistics = {
   favoriteCards: number;
   annotatedCards: number;
   todayGets: number;
+  goal: number;
+  streakDays: number;
   week: { day: string; count: number }[];
   documents: number;
 };

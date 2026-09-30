@@ -11,17 +11,30 @@ type Props = {
   card: CardRecord | null;
   settings: Settings;
   onClose: () => void;
+  // 提供时卡片详情显示「编辑批注」入口；编辑器由页面层级渲染，
+  // 避免在 Modal 对话框窗口里处理键盘（edge-to-edge 下会被系统平移顶出屏幕）。
+  onEditAnnotation?: (card: CardRecord) => void;
 };
 
-export function CardDetailModal({ card, settings, onClose }: Props) {
+export function CardDetailModal({ card, settings, onClose, onEditAnnotation }: Props) {
   const theme = useAppTheme();
   return (
     <Modal visible={Boolean(card)} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[styles.wrap, { backgroundColor: theme.card }]} edges={['top', 'bottom']}>
-        {card ? <KnowledgeCard card={card} settings={settings} onClose={onClose} titleInHeader /> : null}
-        <Pressable onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
-          <Ionicons name="close" size={24} color="#FFFFFF" />
-        </Pressable>
+        {card ? (
+          <KnowledgeCard
+            card={card}
+            settings={settings}
+            onClose={onClose}
+            titleInHeader
+            onEditAnnotation={onEditAnnotation ? () => onEditAnnotation(card) : undefined}
+          />
+        ) : null}
+        {card ? (
+          <Pressable onPress={onClose} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
+            <Ionicons name="close" size={24} color="#FFFFFF" />
+          </Pressable>
+        ) : null}
       </SafeAreaView>
     </Modal>
   );

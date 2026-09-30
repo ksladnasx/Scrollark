@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
+import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { KnowledgeScreen } from './screens/KnowledgeScreen';
 import { SessionEndScreen } from './screens/SessionEndScreen';
+import { SearchScreen } from './screens/SearchScreen';
 import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
@@ -18,15 +19,17 @@ import { appFonts } from './theme/fonts';
 import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import { palette, radius } from './theme/tokens';
 
-const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, week: [], documents: 0 };
+const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, goal: 10, streakDays: 0, week: [], documents: 0 };
 const initialSettings: Settings = {
   sessionCardCount: 10,
   fontSize: 18,
   fontColor: '#171611',
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
-  cardHeaderImageMode: 'local',
-  homeBackgroundImageMode: 'remote',
+  cardHeaderImageMode: 'remote',
+  cardBackgroundImageUrl: CARD_REMOTE_IMAGE_URLS[0],
+  cardImagePoolSize: 20,
+  dailyGetGoal: 10,
   homeBackgroundImageUrl: HOME_BACKGROUND_IMAGE_URL,
   homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
@@ -68,6 +71,21 @@ export default function App() {
     setFavorites(nextFavorites);
   }, []);
 
+  // 刷卡会话中的 get/收藏/批注高频触发刷新：合并为一次延迟刷新，
+  // 会话结束（onEnd/onClose）仍会立即完整刷新。
+  const refreshTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshSoon = React.useCallback(() => {
+    if (refreshTimer.current) return;
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      void refresh();
+    }, 1200);
+  }, [refresh]);
+
+  React.useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
+
   React.useEffect(() => {
     (async () => {
       try {
@@ -80,6 +98,24 @@ export default function App() {
       }
     })();
   }, [refresh]);
+
+  // Android 返回手势/返回键：知识库、收藏等二级页和会话总结页返回主页；
+  // 刷卡页由 SessionScreen 自己处理；主页保持系统默认（退出应用）。
+  React.useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (route.name === 'tabs' && route.tab !== 'home') {
+        setRoute({ name: 'tabs', tab: 'home' });
+        return true;
+      }
+      if (route.name === 'search' || route.name === 'sessionEnd') {
+        void refresh();
+        setRoute({ name: 'tabs', tab: 'home' });
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [refresh, route]);
 
   const loaded = ready && (fontsLoaded || Boolean(fontError));
 
@@ -109,6 +145,17 @@ export default function App() {
     );
   }
 
+  if (route.name === 'search') {
+    return (
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <StatusBar style={theme.dark ? 'light' : 'dark'} />
+          <SearchScreen settings={settings} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
+        </SafeAreaProvider>
+      </ThemeProvider>
+    );
+  }
+
   if (route.name === 'session') {
     return (
       <ThemeProvider settings={settings}>
@@ -117,7 +164,7 @@ export default function App() {
           <SessionScreen
             settings={settings}
             onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
-            onChanged={() => void refresh()}
+            onChanged={refreshSoon}
             onEnd={(summary) => { void refresh(); setRoute({ name: 'sessionEnd', summary }); }}
           />
         </SafeAreaProvider>
@@ -152,6 +199,7 @@ export default function App() {
               settings={settings}
               onStartSession={() => setRoute({ name: 'session' })}
               onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
+              onSearch={() => setRoute({ name: 'search' })}
             />
           ) : (
             <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
@@ -211,7 +259,7 @@ function renderPage(
         />
       );
     case 'favorites':
-      return <FavoritesScreen cards={data.favorites} settings={data.settings} />;
+      return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} />;
     case 'stats':
       return <StatisticsScreen stats={data.stats} />;
     case 'settings':
@@ -220,6 +268,8 @@ function renderPage(
           settings={data.settings}
           onSettingsChanged={(next) => setImmediateSettings(data.setSettings, next)}
           onReset={() => { void data.refresh(); data.setRoute({ name: 'tabs', tab: 'home' }); }}
+          onCardImagesReset={() => { void data.refresh(); }}
+          onDataChanged={() => { void data.refresh(); }}
         />
       );
     case 'home':

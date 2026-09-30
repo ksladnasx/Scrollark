@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
@@ -15,6 +15,8 @@ type Props = {
   footer?: React.ReactNode;
   titleInHeader?: boolean;
   showAnnotationPreview?: boolean;
+  onDoubleTapBody?: (pageX: number, pageY: number) => void;
+  onEditAnnotation?: () => void;
 };
 
 function normalizeTitle(value: string) {
@@ -53,7 +55,7 @@ function readableCardTextColor(theme: AppTheme, color: string) {
   return color === '#171611' || color === '#30443A' || color === '#263E4B' || color === '#5B3B28' ? theme.ink : color;
 }
 
-export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false }: Props) {
+export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, onDoubleTapBody, onEditAnnotation }: Props) {
   const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
@@ -64,6 +66,38 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
   const [showHeaderTitle, setShowHeaderTitle] = React.useState(false);
   const showHeaderTitleRef = React.useRef(false);
   const titleHeightRef = React.useRef(42);
+  const lastBodyTapRef = React.useRef({ time: 0, x: 0, y: 0 });
+  const bodyTouchStartRef = React.useRef({ time: 0, x: 0, y: 0 });
+
+  // 双击正文识别（抖音式收藏）：只统计位移小、时长短的点按，不影响滚动与文本选择。
+  const handleBodyTouchStart = React.useCallback((event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.changedTouches[0] ?? event.nativeEvent.touches[0];
+    if (!touch) return;
+    bodyTouchStartRef.current = { time: Date.now(), x: touch.pageX, y: touch.pageY };
+  }, []);
+
+  const handleBodyTouchEnd = React.useCallback(
+    (event: GestureResponderEvent) => {
+      if (!onDoubleTapBody) return;
+      const touch = event.nativeEvent.changedTouches[0] ?? event.nativeEvent.touches[0];
+      if (!touch) return;
+      const start = bodyTouchStartRef.current;
+      const moved = Math.hypot(touch.pageX - start.x, touch.pageY - start.y);
+      if (moved > 12 || Date.now() - start.time > 350) {
+        lastBodyTapRef.current = { time: 0, x: 0, y: 0 };
+        return;
+      }
+      const now = Date.now();
+      const last = lastBodyTapRef.current;
+      if (now - last.time < 320 && Math.hypot(touch.pageX - last.x, touch.pageY - last.y) < 48) {
+        lastBodyTapRef.current = { time: 0, x: 0, y: 0 };
+        onDoubleTapBody(touch.pageX, touch.pageY);
+        return;
+      }
+      lastBodyTapRef.current = { time: now, x: touch.pageX, y: touch.pageY };
+    },
+    [onDoubleTapBody],
+  );
 
   React.useEffect(() => {
     showHeaderTitleRef.current = false;
@@ -102,9 +136,22 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
       ) : null}
       {annotation && (!compact || showAnnotationPreview) ? (
         <View style={[styles.annotationBox, compact && styles.compactAnnotationBox, { backgroundColor: theme.paperSoft }] }>
-          <Text selectable style={[styles.annotationLabel, { color: theme.inkMuted }]}>我的批注</Text>
+          <View style={styles.annotationHead}>
+            <Text selectable style={[styles.annotationLabel, { color: theme.inkMuted }]}>我的批注</Text>
+            {onEditAnnotation && !compact ? (
+              <Pressable accessibilityRole="button" onPress={onEditAnnotation} style={({ pressed }) => [styles.annotationEdit, pressed && styles.pressed]}>
+                <Ionicons name="create-outline" size={15} color={theme.inkMuted} />
+                <Text style={[styles.annotationEditText, { color: theme.inkMuted }]}>编辑</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <Text selectable style={[styles.annotationText, compact && styles.compactAnnotationText, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={compact ? 2 : undefined} ellipsizeMode="tail">{annotation}</Text>
         </View>
+      ) : onEditAnnotation && !compact ? (
+        <Pressable accessibilityRole="button" onPress={onEditAnnotation} style={({ pressed }) => [styles.annotationBox, styles.annotationAddBox, { backgroundColor: theme.paperSoft }, pressed && styles.pressed]}>
+          <Ionicons name="chatbubble-outline" size={16} color={theme.inkMuted} />
+          <Text style={[styles.annotationAddText, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>添加批注</Text>
+        </Pressable>
       ) : null}
       {compact ? (
         <Text selectable style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={showAnnotationPreview && annotation ? 3 : 4} ellipsizeMode="tail">
@@ -124,8 +171,10 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           cardKey={`${card.id}-${card.documentId}-${card.sortOrder}`}
           cardId={card.id}
           cachedUrl={card.headerImageUrl}
+          sourceUrl={settings.cardBackgroundImageUrl}
+          poolSize={settings.cardImagePoolSize}
           imageStyle={styles.headerImage}
-          style={[styles.header, compact && styles.compactHeader]}
+          style={[styles.header, compact && styles.compactHeader, { backgroundColor: theme.paperSoft }]}
         >
           <View style={styles.headerScrim} />
           {shouldShowTitleInHeader ? (
@@ -168,6 +217,8 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           nestedScrollEnabled
           scrollEventThrottle={16}
           onScroll={handleContentScroll}
+          onTouchStart={onDoubleTapBody ? handleBodyTouchStart : undefined}
+          onTouchEnd={onDoubleTapBody ? handleBodyTouchEnd : undefined}
         >
           {body}
         </ScrollView>
@@ -338,6 +389,11 @@ const styles = StyleSheet.create({
     padding: 15,
     gap: 6,
   },
+  annotationHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  annotationEdit: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
+  annotationEditText: { fontSize: 12, fontWeight: '800' },
+  annotationAddBox: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 13 },
+  annotationAddText: { fontSize: 13, fontWeight: '700' },
   compactAnnotationBox: {
     marginTop: 0,
     padding: 12,

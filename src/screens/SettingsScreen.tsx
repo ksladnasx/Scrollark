@@ -2,31 +2,43 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppButton } from '../components/AppButton';
-import { HOME_BACKGROUND_IMAGE_URLS } from '../config/imageUrls';
-import { resetAllData, updateSetting } from '../data/repository';
+import { clearResolvedCardImages, pruneUnreferencedCardImages } from '../components/CardHeaderImage';
+import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URLS, imageSourceLabel } from '../config/imageUrls';
+import { clearCardHeaderImageUrls, getReferencedCardImageUrls, resetAllData, updateSetting } from '../data/repository';
 import type { Settings } from '../domain/types';
 import { fontOptions } from '../theme/fonts';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette, radius, type AppTheme } from '../theme/tokens';
+import { radius, type AppTheme } from '../theme/tokens';
 import { getReadableHomeBackgroundDownloadDirectory, pickHomeBackgroundDownloadDirectory, refreshHomeBackgroundImageUri } from '../utils/homeBackground';
 
-type Props = { settings: Settings; onSettingsChanged: (settings: Settings) => void; onReset: () => void };
+type Props = { settings: Settings; onSettingsChanged: (settings: Settings) => void; onReset: () => void; onCardImagesReset?: () => void; onDataChanged?: () => void };
+type SourceOption = { url: string; label: string };
+type Status = { kind: 'ok' | 'error' | 'busy'; text: string } | null;
 
-function readableSettingsColor(theme: AppTheme, color: string) {
-  if (!theme.dark) return color;
-  return color === '#171611' || color === '#30443A' || color === '#263E4B' || color === '#5B3B28' ? theme.ink : color;
-}
+const FONT_COLOR_OPTIONS = [
+  ['墨黑', '#171611'],
+  ['松绿', '#30443A'],
+  ['深蓝', '#263E4B'],
+  ['暖棕', '#5B3B28'],
+] as const;
 
-function sourceLabel(url: string, index: number) {
-  return index === 0 ? '随机壁纸源' : '自然壁纸源';
-}
-
-export function SettingsScreen({ settings, onSettingsChanged, onReset }: Props) {
+export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardImagesReset, onDataChanged }: Props) {
   const theme = useAppTheme();
-  const [backgroundBusy, setBackgroundBusy] = React.useState(false);
-  const [backgroundMessage, setBackgroundMessage] = React.useState('');
-  const [sourceOpen, setSourceOpen] = React.useState(false);
-  const previewColor = readableSettingsColor(theme, settings.fontColor);
+  const [homeBusy, setHomeBusy] = React.useState(false);
+  const [homeStatus, setHomeStatus] = React.useState<Status>(null);
+  const [cardBusy, setCardBusy] = React.useState(false);
+  const [cardStatus, setCardStatus] = React.useState<Status>(null);
+  const [homeSourceOpen, setHomeSourceOpen] = React.useState(false);
+  const [cardSourceOpen, setCardSourceOpen] = React.useState(false);
+  const [fontOpen, setFontOpen] = React.useState(false);
+  // 只有远程壁纸模式才涉及壁纸源：其它模式下不显示、也不允许切源。
+  const cardRemote = settings.cardHeaderImageMode === 'remote';
+  const activeFont = fontOptions.find((font) => font.key === settings.fontFamily);
+  const fontFamily = settings.fontFamily;
+
+  const toggleFont = () => { setHomeSourceOpen(false); setCardSourceOpen(false); setFontOpen((value) => !value); };
+  const toggleHomeSource = () => { setFontOpen(false); setCardSourceOpen(false); setHomeSourceOpen((value) => !value); };
+  const toggleCardSource = () => { setFontOpen(false); setHomeSourceOpen(false); setCardSourceOpen((value) => !value); };
 
   const update = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
     await updateSetting(key, value);
@@ -34,43 +46,91 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset }: Props) 
   };
 
   const switchHomeBackground = async () => {
+    if (homeBusy) return;
     try {
-      setBackgroundBusy(true);
-      setBackgroundMessage('');
+      setHomeBusy(true);
+      setHomeStatus({ kind: 'busy', text: '正在获取新壁纸……' });
       await refreshHomeBackgroundImageUri(settings.homeBackgroundImageUrl);
-      setBackgroundMessage('首页背景已切换，回到首页即可看到新图。');
+      setHomeStatus({ kind: 'ok', text: '首页背景已切换，回到首页即可看到新图。' });
     } catch (error) {
-      setBackgroundMessage(error instanceof Error ? error.message : '切换失败，请稍后再试');
+      setHomeStatus({ kind: 'error', text: error instanceof Error ? error.message : '切换失败，请稍后再试' });
     } finally {
-      setBackgroundBusy(false);
+      setHomeBusy(false);
     }
   };
 
   const changeHomeBackgroundSource = async (url: string) => {
-    setSourceOpen(false);
-    if (url === settings.homeBackgroundImageUrl) return;
+    setHomeSourceOpen(false);
+    if (homeBusy || url === settings.homeBackgroundImageUrl) return;
     try {
-      setBackgroundBusy(true);
-      setBackgroundMessage('正在切换壁纸源并刷新首页背景……');
+      setHomeBusy(true);
+      setHomeStatus({ kind: 'busy', text: '正在切换壁纸源并刷新首页背景……' });
       await updateSetting('homeBackgroundImageUrl', url);
       onSettingsChanged({ ...settings, homeBackgroundImageUrl: url });
       await refreshHomeBackgroundImageUri(url);
-      setBackgroundMessage('壁纸源已更新，并已为首页切换新背景。');
+      setHomeStatus({ kind: 'ok', text: '壁纸源已更新，并已为首页切换新背景。' });
     } catch (error) {
-      setBackgroundMessage(error instanceof Error ? error.message : '壁纸源切换失败，请稍后再试');
+      setHomeStatus({ kind: 'error', text: error instanceof Error ? error.message : '壁纸源切换失败，请稍后再试' });
     } finally {
-      setBackgroundBusy(false);
+      setHomeBusy(false);
     }
+  };
+
+  // 切换卡片壁纸源：清空已解析的头图（数据库、内存与本地文件），
+  // 卡片在下次展示时按新源重新解析。仅远程壁纸模式下有意义。
+  const changeCardBackgroundSource = async (url: string) => {
+    setCardSourceOpen(false);
+    if (!cardRemote || cardBusy || url === settings.cardBackgroundImageUrl) return;
+    try {
+      setCardBusy(true);
+      setCardStatus({ kind: 'busy', text: '正在切换卡片壁纸源并清理旧背景……' });
+      await updateSetting('cardBackgroundImageUrl', url);
+      onSettingsChanged({ ...settings, cardBackgroundImageUrl: url });
+      await clearCardHeaderImageUrls();
+      clearResolvedCardImages();
+      onCardImagesReset?.();
+      setCardStatus({ kind: 'ok', text: '卡片壁纸源已更新，卡片背景会按新源重新加载。' });
+    } catch (error) {
+      setCardStatus({ kind: 'error', text: error instanceof Error ? error.message : '卡片壁纸源切换失败，请稍后再试' });
+    } finally {
+      setCardBusy(false);
+    }
+  };
+
+  // 调整图池容量：只影响尚未加载头图的卡片；已持久化的头图保持不变，
+  // 缩小容量后顺便清理不再被引用的图池文件。
+  const changeCardImagePoolSize = async (size: number) => {
+    if (cardBusy || size === settings.cardImagePoolSize) return;
+    try {
+      setCardBusy(true);
+      await updateSetting('cardImagePoolSize', size);
+      onSettingsChanged({ ...settings, cardImagePoolSize: size });
+      const referenced = await getReferencedCardImageUrls();
+      await pruneUnreferencedCardImages(new Set(referenced));
+      setCardStatus({ kind: 'ok', text: '图池容量已更新，只对尚未加载头图的卡片生效。' });
+    } catch {
+      setCardStatus({ kind: 'error', text: '图池容量已更新，但清理旧图文件失败。' });
+    } finally {
+      setCardBusy(false);
+    }
+  };
+
+  const changeCardMode = async (mode: Settings['cardHeaderImageMode']) => {
+    setCardStatus(null);
+    if (mode !== 'remote') setCardSourceOpen(false);
+    if (mode === settings.cardHeaderImageMode) return;
+    await update('cardHeaderImageMode', mode);
+    if (mode === 'remote') setCardStatus({ kind: 'ok', text: '已切换为远程壁纸，卡片背景会按下方所选源自动加载。' });
   };
 
   const chooseDownloadDirectory = async () => {
     try {
-      setBackgroundMessage('');
+      setHomeStatus(null);
       const uri = await pickHomeBackgroundDownloadDirectory(settings.homeBackgroundDownloadDirectory);
       await update('homeBackgroundDownloadDirectory', uri);
-      setBackgroundMessage('背景图下载目录已更新。');
+      setHomeStatus({ kind: 'ok', text: '背景图下载目录已更新。' });
     } catch {
-      setBackgroundMessage('下载目录未更改。');
+      setHomeStatus({ kind: 'error', text: '下载目录未更改。' });
     }
   };
 
@@ -81,135 +141,344 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset }: Props) 
     ]);
   };
 
+  const homeOptions: SourceOption[] = HOME_BACKGROUND_IMAGE_URLS.map((url) => ({ url, label: imageSourceLabel(url) }));
+  const cardOptions: SourceOption[] = CARD_REMOTE_IMAGE_URLS.map((url) => ({ url, label: imageSourceLabel(url) }));
+  const activeHomeSource = homeOptions.find((option) => option.url === settings.homeBackgroundImageUrl);
+  const activeCardSource = cardOptions.find((option) => option.url === settings.cardBackgroundImageUrl);
+
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
-      <SettingBlock title="阅读字体" description="使用 fonts 文件夹里的本地字体，卡片正文和标题会同步切换。" theme={theme} settings={settings}>
-        {fontOptions.map((font, index) => (
-          <Chip key={`font-${font.key}-${index}`} label={font.label} active={settings.fontFamily === font.key} previewFont={font.key} theme={theme} settings={settings} onPress={() => { void update('fontFamily', font.key); }} />
-        ))}
-      </SettingBlock>
+      <Section icon="text-outline" title="阅读偏好" description="字体、字号与配色立即应用到卡片正文；显示模式跟随本页即时生效。" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <SelectRow
+            label="阅读字体"
+            valueLabel={activeFont?.label ?? settings.fontFamily}
+            open={fontOpen}
+            onToggle={toggleFont}
+            theme={theme}
+            settings={settings}
+          >
+            {fontOptions.map((font) => (
+              <OptionRow
+                key={font.key}
+                label={font.label}
+                active={font.key === settings.fontFamily}
+                fontFamily={font.key}
+                theme={theme}
+                onPress={() => { setFontOpen(false); void update('fontFamily', font.key); }}
+              />
+            ))}
+          </SelectRow>
+          <ChipRow label="正文字号" theme={theme} settings={settings}>
+            {[16, 18, 20, 22].map((size) => (
+              <Chip key={`size-${size}`} label={`${size}`} active={settings.fontSize === size} theme={theme} onPress={() => { void update('fontSize', size); }} />
+            ))}
+          </ChipRow>
+          <ChipRow label="文字颜色" theme={theme} settings={settings}>
+            {FONT_COLOR_OPTIONS.map(([label, color]) => (
+              <Chip key={`color-${color}`} label={label} active={settings.fontColor === color} theme={theme} swatch={color} onPress={() => { void update('fontColor', color); }} />
+            ))}
+          </ChipRow>
+          <ChipRow label="显示模式" theme={theme} settings={settings}>
+            {([
+              ['跟随系统', 'system'],
+              ['亮色', 'light'],
+              ['暗色', 'dark'],
+            ] as const).map(([label, mode]) => (
+              <Chip key={`theme-${mode}`} label={label} active={settings.themeMode === mode} theme={theme} onPress={() => { void update('themeMode', mode); }} />
+            ))}
+          </ChipRow>
+        </Rows>
+      </Section>
 
-      <SettingBlock title="显示模式" description="可以固定亮色、固定暗色，也可以跟随手机系统。" theme={theme} settings={settings}>
-        {[
-          ['跟随系统', 'system'],
-          ['亮色', 'light'],
-          ['暗色', 'dark'],
-        ].map(([label, mode], index) => <Chip key={`theme-${mode}-${index}`} label={label} active={settings.themeMode === mode} theme={theme} settings={settings} onPress={() => { void update('themeMode', mode as Settings['themeMode']); }} />)}
-      </SettingBlock>
+      <Section icon="image-outline" title="首页壁纸" description="首页背景支持多个壁纸源，当前源不可用时自动回退到其余源。长按首页背景可保存壁纸。" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <View style={styles.actionRow}>
+            <AppButton label="立即切换首页背景" icon="refresh" variant="dark" loading={homeBusy} onPress={() => { void switchHomeBackground(); }} />
+          </View>
+          <SelectRow
+            label="壁纸源"
+            valueLabel={activeHomeSource?.label ?? settings.homeBackgroundImageUrl}
+            open={homeSourceOpen}
+            disabled={homeBusy}
+            onToggle={toggleHomeSource}
+            theme={theme}
+            settings={settings}
+          >
+            {homeOptions.map((option) => (
+              <OptionRow
+                key={option.url}
+                label={option.label}
+                subLabel={option.url}
+                active={option.url === settings.homeBackgroundImageUrl}
+                fontFamily={fontFamily}
+                theme={theme}
+                onPress={() => changeHomeBackgroundSource(option.url)}
+              />
+            ))}
+          </SelectRow>
+          <View>
+            <View style={styles.selectRowInner}>
+              <Text style={[styles.rowLabel, { color: theme.ink, fontFamily }]}>保存位置</Text>
+              <View style={styles.rowRight}>
+                <Text style={[styles.rowValue, { color: theme.inkMuted, fontFamily }]}>
+                  {settings.homeBackgroundDownloadDirectory ? '自定义文件夹' : '系统相册'}
+                </Text>
+                <MiniButton label="更改" theme={theme} fontFamily={fontFamily} onPress={() => { void chooseDownloadDirectory(); }} />
+                {settings.homeBackgroundDownloadDirectory ? <MiniButton label="还原" theme={theme} fontFamily={fontFamily} onPress={() => { void update('homeBackgroundDownloadDirectory', ''); }} /> : null}
+              </View>
+            </View>
+            {settings.homeBackgroundDownloadDirectory ? (
+              <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.pathHint, { color: theme.inkMuted, fontFamily }]}>
+                {getReadableHomeBackgroundDownloadDirectory(settings.homeBackgroundDownloadDirectory)}
+              </Text>
+            ) : null}
+          </View>
+        </Rows>
+        {homeStatus ? <StatusLine status={homeStatus} theme={theme} fontFamily={fontFamily} /> : null}
+      </Section>
 
-      <SettingBlock title="壁纸设置" description="可手动切换首页壁纸、选择壁纸源。长按首页背景默认保存到系统相册，也可以改为保存到指定文件夹。" theme={theme} settings={settings}>
-        <AppButton label="立即切换首页背景" icon="image-outline" variant="light" loading={backgroundBusy} onPress={switchHomeBackground} />
-        <SourceDropdown open={sourceOpen} onToggle={() => setSourceOpen((value) => !value)} value={settings.homeBackgroundImageUrl} onChange={changeHomeBackgroundSource} theme={theme} settings={settings} />
-        <AppButton label="改为保存到文件夹" icon="folder-open-outline" variant="light" onPress={() => { void chooseDownloadDirectory(); }} />
-        {settings.homeBackgroundDownloadDirectory ? <AppButton label="恢复默认保存到相册" icon="images-outline" variant="light" onPress={() => { void update('homeBackgroundDownloadDirectory', ''); }} /> : null}
-        <Text style={[styles.directoryText, { color: previewColor, fontFamily: settings.fontFamily, fontSize: Math.max(12, settings.fontSize - 4), lineHeight: Math.max(18, settings.fontSize + 2) }]}>
-          {getReadableHomeBackgroundDownloadDirectory(settings.homeBackgroundDownloadDirectory)}
-        </Text>
-        {backgroundMessage ? <Text style={[styles.inlineMessage, { color: previewColor, fontFamily: settings.fontFamily, fontSize: Math.max(13, settings.fontSize - 3) }]}>{backgroundMessage}</Text> : null}
-      </SettingBlock>
+      <Section icon="layers-outline" title="卡片背景" description="刷卡页与卡片详情顶部的背景图。远程壁纸按所选源加载，源不可用时自动回退；头图图池让多张卡片复用少量图片，显著降低流量消耗。" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <ChipRow label="显示模式" theme={theme} settings={settings}>
+            {([
+              ['本地图库', 'local'],
+              ['远程壁纸', 'remote'],
+              ['不显示', 'hidden'],
+            ] as const).map(([label, mode]) => (
+              <Chip key={`card-mode-${mode}`} label={label} active={settings.cardHeaderImageMode === mode} theme={theme} onPress={() => { void changeCardMode(mode); }} />
+            ))}
+          </ChipRow>
+          {cardRemote ? (
+            <>
+              <SelectRow
+                label="卡片壁纸源"
+                valueLabel={activeCardSource?.label ?? settings.cardBackgroundImageUrl}
+                open={cardSourceOpen}
+                disabled={cardBusy}
+                onToggle={toggleCardSource}
+                theme={theme}
+                settings={settings}
+              >
+                {cardOptions.map((option) => (
+                  <OptionRow
+                    key={option.url}
+                    label={option.label}
+                    subLabel={option.url}
+                    active={option.url === settings.cardBackgroundImageUrl}
+                    fontFamily={fontFamily}
+                    theme={theme}
+                    onPress={() => changeCardBackgroundSource(option.url)}
+                  />
+                ))}
+              </SelectRow>
+              <ChipRow label="头图图池" theme={theme} settings={settings}>
+                {([
+                  ['每卡一张', 0],
+                  ['4 张复用', 4],
+                  ['8 张复用', 8],
+                  ['16 张复用', 16],
+                  ['20 张复用', 20],
+                ] as const).map(([label, size]) => (
+                  <Chip
+                    key={`pool-${size}`}
+                    label={label}
+                    active={settings.cardImagePoolSize === size}
+                    theme={theme}
+                    onPress={() => { void changeCardImagePoolSize(size); }}
+                  />
+                ))}
+              </ChipRow>
+            </>
+          ) : null}
+        </Rows>
+        {cardStatus ? <StatusLine status={cardStatus} theme={theme} fontFamily={fontFamily} /> : null}
+      </Section>
 
-      <SettingBlock title="每轮卡片数" description="决定点击继续阅读后，一次抽取多少张卡片。" theme={theme} settings={settings}>
-        {[10, 20, 30].map((count, index) => <Chip key={`count-${count}-${index}`} label={`${count}`} active={settings.sessionCardCount === count} theme={theme} settings={settings} onPress={() => { void update('sessionCardCount', count); }} />)}
-      </SettingBlock>
+      <Section icon="speedometer-outline" title="阅读节奏" description="每轮卡片数决定一次抽取多少张；每日目标驱动首页打卡与统计页的连续天数。" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <ChipRow label="每轮卡片数" theme={theme} settings={settings}>
+            {[10, 20, 30].map((count) => (
+              <Chip key={`count-${count}`} label={`${count}`} active={settings.sessionCardCount === count} theme={theme} onPress={() => { void update('sessionCardCount', count); }} />
+            ))}
+          </ChipRow>
+          <ChipRow label="每日目标" theme={theme} settings={settings}>
+            {([
+              ['关闭', 0],
+              ['5 张', 5],
+              ['10 张', 10],
+              ['20 张', 20],
+              ['30 张', 30],
+            ] as const).map(([label, goal]) => (
+              <Chip
+                key={`goal-${goal}`}
+                label={label}
+                active={settings.dailyGetGoal === goal}
+                theme={theme}
+                onPress={() => {
+                  void update('dailyGetGoal', goal).then(() => onDataChanged?.());
+                }}
+              />
+            ))}
+          </ChipRow>
+        </Rows>
+      </Section>
 
-      <SettingBlock title="正文字号" description="影响刷卡页面与卡片预览的 Markdown 正文，设置页文字也会立即跟随变化。" theme={theme} settings={settings}>
-        {[16, 18, 20, 22].map((size, index) => <Chip key={`size-${size}-${index}`} label={`${size}`} active={settings.fontSize === size} theme={theme} settings={settings} onPress={() => { void update('fontSize', size); }} />)}
-      </SettingBlock>
-
-      <SettingBlock title="文字颜色" description="提供克制的阅读配色；设置页预览文字也会立即跟随变化。" theme={theme} settings={settings}>
-        {[
-          ['墨黑', '#171611'],
-          ['松绿', '#30443A'],
-          ['深蓝', '#263E4B'],
-          ['暖棕', '#5B3B28'],
-        ].map(([label, color], index) => <Chip key={`color-${color}-${index}`} label={label} active={settings.fontColor === color} theme={theme} settings={settings} onPress={() => { void update('fontColor', color); }} />)}
-      </SettingBlock>
-
-      {/* Card header image source setting is hidden; setting value and rendering logic are kept. */}
-
-      <AppButton label="清空本地数据" icon="trash-outline" variant="light" onPress={confirmReset} />
+      <Pressable
+        accessibilityRole="button"
+        onPress={confirmReset}
+        style={({ pressed }) => [styles.dangerButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+      >
+        <Ionicons name="trash-outline" size={16} color={theme.red} />
+        <Text style={[styles.dangerText, { color: theme.red, fontFamily }]}>清空本地数据</Text>
+      </Pressable>
     </ScrollView>
   );
 }
 
-function SettingBlock({ title, description, children, theme, settings }: { title: string; description: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
-  const previewColor = readableSettingsColor(theme, settings.fontColor);
+function Section({ icon, title, description, children, theme, settings }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
   return (
-    <View style={[styles.block, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
-      <Text style={[styles.blockTitle, { color: previewColor, fontFamily: settings.fontFamily, fontSize: Math.max(18, settings.fontSize) }]}>{title}</Text>
-      <Text style={[styles.blockDesc, { color: previewColor, fontFamily: settings.fontFamily, fontSize: Math.max(13, settings.fontSize - 3), lineHeight: Math.max(20, settings.fontSize + 4) }]}>{description}</Text>
-      <View style={styles.chips}>{children}</View>
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <View style={[styles.sectionIcon, { backgroundColor: theme.paperSoft }]}>
+          <Ionicons name={icon} size={14} color={theme.accent} />
+        </View>
+        <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily: settings.fontFamily }]}>{title}</Text>
+      </View>
+      {description ? <Text style={[styles.sectionDesc, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>{description}</Text> : null}
+      <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>{children}</View>
     </View>
   );
 }
 
-function SourceDropdown({ open, value, onToggle, onChange, theme, settings }: { open: boolean; value: string; onToggle: () => void; onChange: (value: string) => void; theme: AppTheme; settings: Settings }) {
-  const previewColor = readableSettingsColor(theme, settings.fontColor);
-  const selectedIndex = Math.max(0, HOME_BACKGROUND_IMAGE_URLS.findIndex((url) => url === value));
+function Rows({ theme, children }: { theme: AppTheme; children: React.ReactNode }) {
+  const items = React.Children.toArray(children).filter(Boolean);
   return (
-    <View style={styles.dropdownWrap}>
-      <Pressable onPress={onToggle} style={({ pressed }) => [styles.dropdownButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, pressed && styles.pressedSmall]}>
-        <View style={styles.dropdownTextWrap}>
-          <Text style={[styles.dropdownLabel, { color: previewColor, fontFamily: settings.fontFamily }]}>更改首页壁纸源</Text>
-          <Text numberOfLines={1} style={[styles.dropdownValue, { color: previewColor, fontFamily: settings.fontFamily }]}>{sourceLabel(value, selectedIndex)}</Text>
-          <Text numberOfLines={1} style={[styles.dropdownUrl, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>{value}</Text>
+    <View>
+      {items.map((child, index) => (
+        <View key={index}>
+          {index > 0 ? <View style={[styles.divider, { backgroundColor: theme.line }]} /> : null}
+          {child}
         </View>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color={previewColor} />
+      ))}
+    </View>
+  );
+}
+
+// 手风琴式选择行：收起时只显示「标签 + 当前值 + 箭头」，展开后列出全部选项。
+function SelectRow({ label, valueLabel, open, disabled, onToggle, children, theme, settings }: { label: string; valueLabel: string; open: boolean; disabled?: boolean; onToggle?: () => void; children?: React.ReactNode; theme: AppTheme; settings: Settings }) {
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        disabled={disabled}
+        onPress={onToggle}
+        style={({ pressed }) => [styles.selectRowInner, pressed && !disabled && styles.pressed, disabled && { opacity: 0.55 }]}
+      >
+        <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
+        <View style={styles.rowRight}>
+          <Text numberOfLines={1} style={[styles.rowValue, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>{valueLabel}</Text>
+          {onToggle ? <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={15} color={theme.inkMuted} /> : null}
+        </View>
       </Pressable>
-
-      {open ? (
-        <View style={[styles.dropdownMenu, { backgroundColor: theme.paperSoft, borderColor: theme.line }] }>
-          {HOME_BACKGROUND_IMAGE_URLS.map((url, index) => {
-            const active = url === value;
-            return (
-              <Pressable key={url} onPress={() => onChange(url)} style={({ pressed }) => [styles.dropdownOption, active && { backgroundColor: theme.accent }, pressed && styles.pressedSmall]}>
-                <View style={styles.dropdownTextWrap}>
-                  <Text style={[styles.optionTitle, { color: active ? theme.paper : previewColor, fontFamily: settings.fontFamily }]}>{sourceLabel(url, index)}</Text>
-                  <Text numberOfLines={2} style={[styles.optionUrl, { color: active ? theme.paper : theme.inkMuted, fontFamily: settings.fontFamily }]}>{url}</Text>
-                </View>
-                {active ? <Ionicons name="checkmark-circle" size={20} color={theme.paper} /> : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      ) : null}
+      {open && children ? <View style={styles.optionList}>{children}</View> : null}
     </View>
   );
 }
 
-function Chip({ label, active, onPress, previewFont, theme, settings }: { label: string; active: boolean; onPress: () => void; previewFont?: string; theme: AppTheme; settings: Settings }) {
-  const previewColor = readableSettingsColor(theme, settings.fontColor);
+function OptionRow({ label, subLabel, active, fontFamily, theme, onPress }: { label: string; subLabel?: string; active: boolean; fontFamily: string; theme: AppTheme; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.chip, { backgroundColor: theme.paperSoft }, active && { backgroundColor: theme.accent }, pressed && { transform: [{ scale: 0.97 }] }]}>
-      <Text style={[styles.chipText, { color: active ? theme.paper : previewColor, fontFamily: previewFont ?? settings.fontFamily, fontSize: Math.max(14, settings.fontSize - 2) }]}>{label}</Text>
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}>
+      <View style={styles.optionTextWrap}>
+        <Text numberOfLines={1} style={[styles.optionLabel, { color: active ? theme.accent : theme.ink, fontFamily }]}>{label}</Text>
+        {subLabel ? <Text numberOfLines={1} style={[styles.optionSub, { color: theme.inkMuted, fontFamily }]}>{subLabel}</Text> : null}
+      </View>
+      {active ? <Ionicons name="checkmark" size={17} color={theme.accent} /> : null}
     </Pressable>
   );
 }
 
+function ChipRow({ label, children, theme, settings }: { label: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
+  return (
+    <View style={styles.rowInner}>
+      <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
+      <View style={styles.chipWrap}>{children}</View>
+    </View>
+  );
+}
+
+function Chip({ label, active, onPress, theme, swatch }: { label: string; active: boolean; onPress: () => void; theme: AppTheme; swatch?: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        { borderColor: active ? theme.accent : theme.line },
+        active && { backgroundColor: theme.accent },
+        !active && { backgroundColor: 'transparent' },
+        pressed && styles.pressed,
+      ]}
+    >
+      {swatch ? <View style={[styles.swatch, { backgroundColor: swatch, borderColor: active ? 'rgba(255,255,255,0.55)' : theme.line }]} /> : null}
+      <Text style={[styles.chipText, { color: active ? theme.paper : theme.ink }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function MiniButton({ label, onPress, theme, fontFamily }: { label: string; onPress: () => void; theme: AppTheme; fontFamily: string }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.miniButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, pressed && styles.pressed]}>
+      <Text style={[styles.miniButtonText, { color: theme.ink, fontFamily }]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function StatusLine({ status, theme, fontFamily }: { status: NonNullable<Status>; theme: AppTheme; fontFamily: string }) {
+  const config = status.kind === 'ok'
+    ? { icon: 'checkmark-circle' as const, color: theme.accent }
+    : status.kind === 'error'
+      ? { icon: 'alert-circle' as const, color: theme.red }
+      : { icon: 'time-outline' as const, color: theme.inkMuted };
+  return (
+    <View style={styles.statusWrap}>
+      <Ionicons name={config.icon} size={14} color={config.color} />
+      <Text style={[styles.statusText, { color: config.color, fontFamily }]}>{status.text}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: { padding: 18, paddingBottom: 38, gap: 14 },
-  header: { gap: 7 },
-  eyebrow: { color: palette.inkMuted, textTransform: 'uppercase', fontWeight: '900', letterSpacing: 1.2, fontSize: 12 },
-  title: { color: palette.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1.2 },
-  subtitle: { color: palette.inkMuted, fontSize: 15, lineHeight: 23 },
-  block: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, padding: 18, borderWidth: 1, borderColor: palette.line, gap: 8 },
-  blockTitle: { color: palette.ink, fontSize: 18, fontWeight: '900' },
-  blockDesc: { color: palette.inkMuted, fontSize: 13, lineHeight: 20 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 6 },
-  chip: { minHeight: 40, borderRadius: radius.pill, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.paperSoft },
-  chipText: { color: palette.ink, fontWeight: '800' },
-  inlineMessage: { width: '100%', fontSize: 13, lineHeight: 20, fontWeight: '700' },
-  directoryText: { width: '100%', fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  dropdownWrap: { width: '100%', gap: 6 },
-  dropdownButton: { minHeight: 66, borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  dropdownTextWrap: { flex: 1, minWidth: 0, gap: 2 },
-  dropdownLabel: { fontSize: 12, fontWeight: '900' },
-  dropdownValue: { fontSize: 15, fontWeight: '900' },
-  dropdownUrl: { fontSize: 11, fontWeight: '700' },
-  dropdownMenu: { width: '100%', borderRadius: radius.lg, borderWidth: 1, overflow: 'hidden' },
-  dropdownOption: { minHeight: 62, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  optionTitle: { fontSize: 15, fontWeight: '900' },
-  optionUrl: { fontSize: 11, lineHeight: 16, fontWeight: '700' },
-  pressedSmall: { opacity: 0.76, transform: [{ scale: 0.99 }] },
+  wrap: { padding: 16, paddingBottom: 40, gap: 24 },
+  section: { gap: 10 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
+  sectionDesc: { fontSize: 12, lineHeight: 18, paddingHorizontal: 2 },
+  card: { borderRadius: radius.xl, borderWidth: 1, overflow: 'hidden' },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
+  rowInner: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  selectRowInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16, paddingVertical: 14 },
+  rowLabel: { fontSize: 14, fontWeight: '700' },
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end', minWidth: 0 },
+  rowValue: { fontSize: 13, fontWeight: '600', flexShrink: 1, maxWidth: '70%', textAlign: 'right' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { minHeight: 34, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  chipText: { fontSize: 13, fontWeight: '700' },
+  swatch: { width: 12, height: 12, borderRadius: 6, borderWidth: 1 },
+  optionList: { paddingBottom: 6 },
+  optionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 11, paddingHorizontal: 16 },
+  optionTextWrap: { flex: 1, minWidth: 0, gap: 2 },
+  optionLabel: { fontSize: 14, fontWeight: '700' },
+  optionSub: { fontSize: 11, fontWeight: '600' },
+  actionRow: { padding: 12 },
+  miniButton: { minHeight: 30, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  miniButtonText: { fontSize: 12, fontWeight: '800' },
+  pathHint: { fontSize: 11, lineHeight: 16, paddingHorizontal: 16, paddingBottom: 12, marginTop: -4 },
+  statusWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
+  statusText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  dangerButton: { minHeight: 48, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  dangerText: { fontSize: 14, fontWeight: '800' },
+  pressed: { opacity: 0.7 },
 });

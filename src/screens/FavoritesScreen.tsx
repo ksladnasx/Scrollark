@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AnnotationEditor } from '../components/AnnotationEditor';
 import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import type { CardRecord, Settings } from '../domain/types';
@@ -7,31 +8,69 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { palette } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
 
-export function FavoritesScreen({ cards, settings }: { cards: CardRecord[]; settings: Settings }) {
+type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void };
+
+const CARD_ITEM_HEIGHT = 370;
+
+export function FavoritesScreen({ cards, settings, onChanged }: Props) {
   const theme = useAppTheme();
-  const [selectedCard, setSelectedCard] = React.useState<CardRecord | null>(null);
+  const fontFamily = settings.fontFamily;
+  const [selectedCardId, setSelectedCardId] = React.useState<number | null>(null);
+  const [editingCardId, setEditingCardId] = React.useState<number | null>(null);
+  // 按 id 派生：批注在编辑器里保存后，列表刷新时详情/编辑内容自动跟随更新。
+  const selectedCard = selectedCardId === null ? null : cards.find((card) => card.id === selectedCardId) ?? null;
+  const editingCard = editingCardId === null ? null : cards.find((card) => card.id === editingCardId) ?? null;
+
+  // 编辑流程：详情收起 → 屏幕层级编辑器弹出（与刷卡页同一架构，键盘行为可靠）；
+  // 编辑结束（保存或放弃）后自动回到详情。
+  const handleEditorClose = React.useCallback(() => {
+    if (editingCardId !== null) setSelectedCardId(editingCardId);
+    setEditingCardId(null);
+  }, [editingCardId]);
+
+  const handleEditorSaved = React.useCallback((note: string | null) => {
+    onChanged?.();
+    if (editingCardId !== null) setSelectedCardId(editingCardId);
+    setEditingCardId(null);
+  }, [editingCardId, onChanged]);
+
+  const renderItem = React.useCallback(({ item }: { item: CardRecord }) => (
+    <Pressable
+      onPress={() => setSelectedCardId(item.id)}
+      style={({ pressed }) => [styles.cardWrap, pressed && styles.pressed]}
+    >
+      <KnowledgeCard card={item} settings={settings} compact showAnnotationPreview />
+    </Pressable>
+  ), [settings]);
 
   return (
-    <>
-    <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Saved</Text>
-        <Text style={[styles.title, { color: theme.ink }]}>收藏</Text>
-        <Text style={[styles.subtitle, { color: theme.inkMuted }]}>所有收藏状态都会落到本地数据库，重启应用后仍然保留。</Text>
-      </View>
-      {cards.length === 0 ? <Empty title="还没有收藏" body="在刷卡时点击收藏按钮，重要内容会出现在这里。" /> : null}
-      {cards.map((card, index) => (
-        <Pressable
-          key={`favorite-card-${card.id}-${card.documentId}-${card.sortOrder}-${index}`}
-          onPress={() => setSelectedCard(card)}
-          style={({ pressed }) => [styles.cardWrap, pressed && styles.pressed]}
-        >
-          <KnowledgeCard card={card} settings={settings} compact showAnnotationPreview />
-        </Pressable>
-      ))}
-    </ScrollView>
-    <CardDetailModal card={selectedCard} settings={settings} onClose={() => setSelectedCard(null)} />
-    </>
+    <View style={{ flex: 1, backgroundColor: theme.paper }}>
+      <FlatList
+        contentContainerStyle={styles.wrap}
+        showsVerticalScrollIndicator={false}
+        data={cards}
+        keyExtractor={(card, index) => `favorite-card-${card.id}-${card.documentId}-${card.sortOrder}-${index}`}
+        renderItem={renderItem}
+        getItemLayout={(_, index) => ({ length: CARD_ITEM_HEIGHT, offset: CARD_ITEM_HEIGHT * index, index })}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Saved</Text>
+            <Text style={[styles.title, { color: theme.ink, fontFamily }]}>收藏</Text>
+            <Text style={[styles.subtitle, { color: theme.inkMuted, fontFamily }]}>所有收藏状态都会落到本地数据库，重启应用后仍然保留。</Text>
+          </View>
+        }
+        ListEmptyComponent={<Empty title="还没有收藏" body="在刷卡时点击收藏按钮，重要内容会出现在这里。" />}
+      />
+      {editingCard ? (
+        <AnnotationEditor card={editingCard} settings={settings} onClose={handleEditorClose} onSaved={handleEditorSaved} />
+      ) : null}
+      <CardDetailModal
+        card={selectedCard}
+        settings={settings}
+        onClose={() => setSelectedCardId(null)}
+        onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
+      />
+    </View>
   );
 }
 

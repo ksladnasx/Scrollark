@@ -44,6 +44,22 @@ export function MarkdownRenderer({
   fontFamily?: string;
 }) {
   const blocks = parseMarkdownBlocks(markdown);
+  return <MarkdownBlocks blocks={blocks} color={color} fontSize={fontSize} fontFamily={fontFamily} />;
+}
+
+// 渲染已解析的块列表：预览等长文档场景可以在外部做分页，只渲染前 N 个块，
+// 避免一次性挂载整篇文档造成明显卡顿。
+export function MarkdownBlocks({
+  blocks,
+  color = palette.ink,
+  fontSize = 18,
+  fontFamily,
+}: {
+  blocks: ReturnType<typeof parseMarkdownBlocks>;
+  color?: string;
+  fontSize?: number;
+  fontFamily?: string;
+}) {
   const { width } = useWindowDimensions();
   const theme = useAppTheme();
   return (

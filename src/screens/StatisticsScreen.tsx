@@ -8,6 +8,10 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
   const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
+  const goalOn = stats.goal > 0;
+  const goalProgress = goalOn ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
+  const goalReached = goalOn && stats.todayGets >= stats.goal;
+  const weekHits = goalOn ? stats.week.filter((day) => day.count >= stats.goal).length : 0;
   const [chartWidth, setChartWidth] = React.useState(0);
   const chartHeight = 128;
   const points = stats.week.map((day, index) => {
@@ -34,6 +38,30 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
         <Metric label="卡片" value={stats.totalCards} />
         <Metric label="收藏" value={stats.favoriteCards} />
         <Metric label="批注" value={stats.annotatedCards} />
+      </View>
+
+      <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <View style={styles.goalHead}>
+          <Text style={[styles.goalTitle, { color: theme.ink }]}>每日目标</Text>
+          {goalOn ? (
+            <Text style={[styles.goalValue, { color: goalReached ? theme.accent : theme.inkMuted }]}>
+              {stats.todayGets}/{stats.goal}
+            </Text>
+          ) : null}
+        </View>
+        {goalOn ? (
+          <>
+            <View style={[styles.goalTrack, { backgroundColor: theme.paperSoft }]}>
+              <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: theme.accent }]} />
+            </View>
+            <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>
+              {goalReached ? `今日已打卡 · 已连续 ${stats.streakDays} 天` : `再 get ${stats.goal - stats.todayGets} 张即完成打卡 · 已连续 ${stats.streakDays} 天`}
+            </Text>
+            <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>本周达成 {weekHits}/7 天</Text>
+          </>
+        ) : (
+          <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>未设置每日目标，可在 设置 → 阅读节奏 中开启。</Text>
+        )}
       </View>
 
       <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
@@ -99,6 +127,13 @@ const styles = StyleSheet.create({
   metricValue: { color: palette.ink, fontSize: 30, fontWeight: '900', letterSpacing: -0.8 },
   metricLabel: { color: palette.inkMuted, fontSize: 12, fontWeight: '800' },
   chartCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 14 },
+  goalCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 10 },
+  goalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  goalTitle: { fontSize: 17, fontWeight: '900' },
+  goalValue: { fontSize: 16, fontWeight: '900' },
+  goalTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  goalFill: { height: 8, borderRadius: 4 },
+  goalMeta: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   sectionTitle: { color: palette.ink, fontSize: 17, fontWeight: '900' },
   lineChart: { gap: 10 },
   linePlot: { position: 'relative', width: '100%' },

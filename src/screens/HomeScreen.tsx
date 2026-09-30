@@ -3,7 +3,7 @@ import React from 'react';
 import { Alert, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
-import { getDailyHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
+import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, shadow, type AppTheme } from '../theme/tokens';
 
@@ -12,6 +12,7 @@ type Props = {
   settings: Settings;
   onStartSession: () => void;
   onNavigate: (tab: TabKey) => void;
+  onSearch: () => void;
 };
 
 const menu: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap; tab: TabKey }[] = [
@@ -29,11 +30,12 @@ function pickLocalHomeImage(): ImageSourcePropType {
   return heroImages[key] ?? heroImages.warm0;
 }
 
-export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Props) {
+export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSearch }: Props) {
   const theme = useAppTheme();
   const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
-  const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(fallbackHomeImage);
-  const [homeImageUri, setHomeImageUri] = React.useState<string | null>(null);
+  // 初始化时同步读本地缓存的壁纸，跨天下载新图期间也先显示旧图，避免闪变。
+  const [homeImageUri, setHomeImageUri] = React.useState<string | null>(() => getCachedHomeBackgroundImageUri());
+  const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -87,6 +89,9 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
     };
   }, []);
 
+  const goalProgress = stats.goal > 0 ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
+  const goalReached = stats.goal > 0 && stats.todayGets >= stats.goal;
+
   return (
     <ImageBackground source={homeImage} resizeMode="cover" style={styles.screen} imageStyle={styles.backgroundImage}>
       <Pressable style={styles.backgroundPressArea} delayLongPress={600} onLongPress={confirmDownloadBackground}>
@@ -116,17 +121,31 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate }: Prop
 
       <View style={styles.bottomArea}>
         <View style={[styles.panel, { backgroundColor: theme.dark ? 'rgba(27,26,23,0.95)' : 'rgba(255,255,255,0.94)' }] }>
-          <View style={styles.continueRow}>
-            <View style={styles.continueBox}>
-              <Pressable onPress={onStartSession} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
-                <Text style={[styles.continueText, { fontFamily: settings.fontFamily }]}>继续阅读</Text>
-              </Pressable>
-            </View>
-            <Pressable onPress={() => onNavigate('knowledge')} style={styles.libraryBox}>
-              <Ionicons name="library-outline" size={30} color={theme.ink} />
-              <Text style={[styles.libraryText, { color: theme.ink }]}>知识库</Text>
+            <View style={styles.continueRow}>
+              <View style={styles.continueBox}>
+                <Pressable onPress={onStartSession} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
+                  <Text style={[styles.continueText, { fontFamily: settings.fontFamily }]}>{goalReached ? '继续打卡' : '继续阅读'}</Text>
+                </Pressable>
+              </View>
+            <Pressable onPress={onSearch} style={({ pressed }) => [styles.libraryBox, pressed && styles.pressed]}>
+              <Ionicons name="search-outline" size={30} color={theme.ink} />
+              <Text style={[styles.libraryText, { color: theme.ink }]}>搜索</Text>
             </Pressable>
           </View>
+
+          {stats.goal > 0 ? (
+            <View style={styles.goalRow}>
+              <View style={styles.goalHead}>
+                <Text style={[styles.goalLabel, { color: theme.inkMuted }]}>今日目标 · {stats.todayGets}/{stats.goal}</Text>
+                <Text style={[styles.goalStatus, { color: goalReached ? theme.accent : theme.inkMuted }]}>
+                  {goalReached ? `已打卡 · 连续 ${stats.streakDays} 天` : `再 get ${stats.goal - stats.todayGets} 张`}
+                </Text>
+              </View>
+              <View style={[styles.goalTrack, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.12)' : 'rgba(23,22,17,0.08)' }]}>
+                <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.quickGrid}>
             <Quick icon="albums-outline" label="卡片" value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} theme={theme} />
@@ -173,6 +192,12 @@ const styles = StyleSheet.create({
   libraryBox: { width: 64, alignItems: 'center', gap: 5 },
   libraryText: { color: '#222222', fontSize: 16 },
   message: { marginTop: 10, color: palette.blue, textAlign: 'center', fontSize: 13 },
+  goalRow: { marginTop: 20, gap: 8 },
+  goalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  goalLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6 },
+  goalStatus: { fontSize: 12, fontWeight: '800' },
+  goalTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
+  goalFill: { height: 8, borderRadius: 4 },
   quickGrid: { marginTop: 22, flexDirection: 'row', justifyContent: 'space-between' },
   quick: { width: 64, alignItems: 'center', gap: 4 },
   quickValue: { color: '#777777', fontSize: 12 },
