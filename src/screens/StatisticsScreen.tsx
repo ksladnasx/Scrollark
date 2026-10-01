@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Statistics } from '../domain/types';
@@ -34,8 +35,8 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
 
       {/* 吸收概览：背景与文字随明暗模式取同向色（浅色模式浅卡片、深色模式深卡片） */}
       <View style={[styles.heroStat, { backgroundColor: theme.accentSoft }] }>
-        <Text style={[styles.heroValue, { color: theme.ink }]}>{stats.todayGets}</Text>
-        <Text style={[styles.heroLabel, { color: theme.ink }]}>今日吸收卡片</Text>
+        <Text style={[styles.heroValue, { color: theme.ink }]}>{stats.gotCards}</Text>
+        <Text style={[styles.heroLabel, { color: theme.ink }]}>总吸收卡片</Text>
         <View style={[styles.progressTrack, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]}>
           <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.ink }]} />
         </View>
@@ -53,15 +54,22 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
         <View style={styles.goalHead}>
           <Text style={[styles.goalTitle, { color: theme.ink }]}>每日目标</Text>
           {goalOn ? (
-            <Text style={[styles.goalValue, { color: goalReached ? theme.accent : theme.inkMuted }]}>
-              {stats.todayGets}/{stats.goal}
-            </Text>
+            goalReached ? (
+              <View style={styles.goalBadge}>
+                <Ionicons name="checkmark-circle" size={13} color="#5D4218" />
+                <Text style={styles.goalBadgeText}>已打卡 {stats.todayGets}/{stats.goal}</Text>
+              </View>
+            ) : (
+              <Text style={[styles.goalValue, { color: theme.inkMuted }]}>
+                {stats.todayGets}/{stats.goal}
+              </Text>
+            )
           ) : null}
         </View>
         {goalOn ? (
           <>
             <View style={[styles.goalTrack, { backgroundColor: theme.paperSoft }]}>
-              <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: theme.accent }]} />
+              <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
             </View>
             <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>
               {goalReached ? `今日已打卡 · 已连续 ${stats.streakDays} 天` : `再 get ${stats.goal - stats.todayGets} 张即完成打卡 · 已连续 ${stats.streakDays} 天`}
@@ -179,6 +187,8 @@ const styles = StyleSheet.create({
   goalValue: { fontSize: 16, fontWeight: '900' },
   goalTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
   goalFill: { height: 8, borderRadius: 4 },
+  goalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F2B737', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  goalBadgeText: { color: '#5D4218', fontSize: 12, fontWeight: '900' },
   goalMeta: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   sectionTitle: { color: palette.ink, fontSize: 17, fontWeight: '900' },
   lineChart: { gap: 10 },

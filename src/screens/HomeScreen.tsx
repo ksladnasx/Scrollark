@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
+import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
-import { Alert, ImageBackground, Platform, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Alert, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import type { Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
 import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
+import { HomeShareOverlay } from '../components/HomeShareOverlay';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
 
@@ -33,11 +34,15 @@ function pickLocalHomeImage(): ImageSourcePropType {
 
 export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSearch }: Props) {
   const theme = useAppTheme();
+  // 毛玻璃的模糊目标：整个首页背景（壁纸 + 蒙版）。
+  const backgroundRef = React.useRef<View | null>(null);
   const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
   // 初始化时同步读本地缓存的壁纸，跨天下载新图期间也先显示旧图，避免闪变。
   const [homeImageUri, setHomeImageUri] = React.useState<string | null>(() => getCachedHomeBackgroundImageUri());
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
+  // 首页数据分享海报（壁纸为背景的统计图片）。
+  const [sharingHome, setSharingHome] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -94,7 +99,8 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
   const goalReached = stats.goal > 0 && stats.todayGets >= stats.goal;
 
   return (
-    <ImageBackground source={homeImage} resizeMode="cover" style={styles.screen} imageStyle={styles.backgroundImage}>
+    <BlurTargetView ref={backgroundRef} style={styles.screen}>
+      <ImageBackground source={homeImage} resizeMode="cover" style={styles.screenInner} imageStyle={styles.backgroundImage}>
       <Pressable style={styles.backgroundPressArea} delayLongPress={600} onLongPress={confirmDownloadBackground}>
         <View style={styles.scrim} />
       </Pressable>
@@ -121,11 +127,12 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
       </View>
 
       <View style={styles.bottomArea}>
-        {/* 毛玻璃面板：expo-blur 真模糊 + 半透明纸色叠加；Android 需显式开启模糊算法 */}
+        {/* 毛玻璃面板：blurTarget 指向整个首页背景（壁纸 + 蒙版）+ 半透明纸色叠加 */}
         <BlurView
           intensity={theme.dark ? 45 : 60}
           tint={theme.dark ? 'dark' : 'light'}
-          experimentalBlurMethod={Number(Platform.Version) >= 31 ? 'dimezisBlurViewSdk31Plus' : 'dimezisBlurView'}
+          blurMethod="dimezisBlurViewSdk31Plus"
+          blurTarget={backgroundRef}
           style={styles.panelBlur}
         >
           <View style={[styles.panelInner, { backgroundColor: theme.dark ? 'rgba(20,19,16,0.55)' : 'rgba(255,255,255,0.24)' }]}>
@@ -163,25 +170,35 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
             </View>
           ) : null}
 
-          {/* 数据一览：极简数字条，点击跳转对应页面 */}
+          {/* 数据一览：极简数字条，点击跳转对应页面；收藏位为分享入口 */}
           <View style={styles.statStrip}>
-            <StatTile icon="albums-outline" label="卡片" value={stats.totalCards} onPress={() => onNavigate('knowledge')} theme={theme} />
-            <StatTile icon="checkmark-circle-outline" label="已 Get" value={stats.gotCards} onPress={() => onNavigate('stats')} theme={theme} />
-            <StatTile icon="heart-outline" label="收藏" value={stats.favoriteCards} onPress={() => onNavigate('favorites')} theme={theme} />
-            <StatTile icon="chatbubble-ellipses-outline" label="批注" value={stats.annotatedCards} onPress={() => onNavigate('favorites')} theme={theme} />
+            <StatTile icon="albums-outline" accessibilityLabel={`卡片 ${stats.totalCards}`} value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} theme={theme} />
+            <StatTile icon="checkmark-circle-outline" accessibilityLabel={`已 Get ${stats.gotCards}`} value={`${stats.gotCards}`} onPress={() => onNavigate('stats')} theme={theme} />
+            <StatTile icon="share-social-outline" accessibilityLabel="分享首页数据" value="分享" onPress={() => setSharingHome(true)} theme={theme} />
+            <StatTile icon="chatbubble-ellipses-outline" accessibilityLabel={`批注 ${stats.annotatedCards}`} value={`${stats.annotatedCards}`} onPress={() => onNavigate('favorites')} theme={theme} />
           </View>
           </View>
         </BlurView>
       </View>
+
+      {sharingHome ? (
+        <HomeShareOverlay
+          imageSource={homeImage}
+          settings={settings}
+          stats={stats}
+          onDone={() => setSharingHome(false)}
+        />
+      ) : null}
     </ImageBackground>
+    </BlurTargetView>
   );
 }
 
-function StatTile({ icon, label, value, onPress, theme }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: number; onPress: () => void; theme: AppTheme }) {
+function StatTile({ icon, accessibilityLabel, value, onPress, theme }: { icon: keyof typeof Ionicons.glyphMap; accessibilityLabel: string; value: string; onPress: () => void; theme: AppTheme }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label} ${value}`}
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       style={({ pressed }) => [styles.statTile, pressed && styles.pressed]}
     >
@@ -192,7 +209,8 @@ function StatTile({ icon, label, value, onPress, theme }: { icon: keyof typeof I
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#11110F', justifyContent: 'space-between' },
+  screen: { flex: 1, backgroundColor: '#11110F' },
+  screenInner: { flex: 1, justifyContent: 'space-between' },
   backgroundImage: { width: '100%', height: '100%' },
   backgroundPressArea: { ...StyleSheet.absoluteFillObject },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },

@@ -1,10 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { MarkdownBlocks } from './MarkdownRenderer';
 import { parseMarkdownBlocks } from '../utils/markdown';
+import { softIcon } from '../theme/assets';
 import type { CardRecord, Settings } from '../domain/types';
-import { radius } from '../theme/tokens';
+import { palette, radius } from '../theme/tokens';
 
 type Props = {
   card: CardRecord;
@@ -46,9 +46,7 @@ export function SharePoster({ card, settings, width, imageSource, maxBlocks = 30
         />
         <View style={styles.heroScrim} />
         <View style={styles.heroBrandRow}>
-          <View style={styles.brandBadge}>
-            <Ionicons name="layers-outline" size={13} color="#FFFFFF" />
-          </View>
+          <Image source={softIcon} style={styles.brandIcon} />
           <Text style={styles.heroBrandName}>Scrollark · 知识卡片</Text>
           <Text style={styles.heroBrandDate}>{formatDateText(new Date())}</Text>
         </View>
@@ -60,7 +58,7 @@ export function SharePoster({ card, settings, width, imageSource, maxBlocks = 30
         <View style={styles.divider} />
 
         <View style={styles.content}>
-          <MarkdownBlocks blocks={shown} color={settings.fontColor} fontSize={15} fontFamily={settings.fontFamily} />
+          <MarkdownBlocks blocks={shown} color={palette.ink} fontSize={15} fontFamily={settings.fontFamily} />
           {truncated ? <Text style={styles.truncated}>—— 内容较长，这里展示前部分，完整内容在 Scrollark 中阅读 ——</Text> : null}
           {card.annotation?.trim() ? (
             <View style={styles.annotation}>
@@ -102,16 +100,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  brandBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: 'rgba(17,17,15,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  brandIcon: { width: 22, height: 22, borderRadius: 6 },
   heroBrandName: {
     flex: 1,
     fontSize: 11,

@@ -24,7 +24,6 @@ const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0,
 const initialSettings: Settings = {
   sessionCardCount: 10,
   fontSize: 18,
-  fontColor: '#171611',
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'remote',

@@ -15,13 +15,6 @@ type Props = { settings: Settings; onSettingsChanged: (settings: Settings) => vo
 type SourceOption = { url: string; label: string };
 type Status = { kind: 'ok' | 'error' | 'busy'; text: string } | null;
 
-const FONT_COLOR_OPTIONS = [
-  ['墨黑', '#171611'],
-  ['松绿', '#30443A'],
-  ['深蓝', '#263E4B'],
-  ['暖棕', '#5B3B28'],
-] as const;
-
 export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardImagesReset, onDataChanged }: Props) {
   const theme = useAppTheme();
   const [homeBusy, setHomeBusy] = React.useState(false);
@@ -173,11 +166,6 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
           <ChipRow label="正文字号" theme={theme} settings={settings}>
             {[16, 18, 20, 22].map((size) => (
               <Chip key={`size-${size}`} label={`${size}`} active={settings.fontSize === size} theme={theme} onPress={() => { void update('fontSize', size); }} />
-            ))}
-          </ChipRow>
-          <ChipRow label="文字颜色" theme={theme} settings={settings}>
-            {FONT_COLOR_OPTIONS.map(([label, color]) => (
-              <Chip key={`color-${color}`} label={label} active={settings.fontColor === color} theme={theme} swatch={color} onPress={() => { void update('fontColor', color); }} />
             ))}
           </ChipRow>
           <ChipRow label="显示模式" theme={theme} settings={settings}>

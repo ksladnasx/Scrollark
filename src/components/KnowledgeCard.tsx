@@ -3,7 +3,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
+import { palette, radius, shadow } from '../theme/tokens';
 import { CardHeaderImage } from './CardHeaderImage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -50,16 +50,14 @@ function stripDuplicatedLeadingTitle(markdown: string, title: string) {
   return [...lines.slice(0, firstContentIndex), ...lines.slice(firstContentIndex + 1)].join('\n').trimStart();
 }
 
-function readableCardTextColor(theme: AppTheme, color: string) {
-  if (!theme.dark) return color;
-  return color === '#171611' || color === '#30443A' || color === '#263E4B' || color === '#5B3B28' ? theme.ink : color;
-}
-
+// 深色模式下浅色卡片上的深色字体会不可读：把四个预设色映射到
+// 同色相的浅色变体（调色板各自的深色模式取值），保留用户的选择；
+// 其他自定义颜色按原样使用。浅色模式直接应用所选颜色。
 export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, onDoubleTapBody, onEditAnnotation }: Props) {
   const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
-  const textColor = readableCardTextColor(theme, settings.fontColor);
+  const textColor = theme.ink;
   const annotation = card.annotation?.trim() ?? '';
   const shouldShowTitleInHeader = titleInHeader && !compact;
   const shouldShowTitleInBody = !shouldShowTitleInHeader;

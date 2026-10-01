@@ -11,7 +11,6 @@ const DB_NAME = 'scrollark.db';
 const DEFAULT_SETTINGS: Settings = {
   sessionCardCount: 10,
   fontSize: 18,
-  fontColor: '#171611',
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'remote',
@@ -115,7 +114,6 @@ export async function getSettings(): Promise<Settings> {
   for (const row of rows) {
     if (row.key === 'sessionCardCount') next.sessionCardCount = Number(row.value) || DEFAULT_SETTINGS.sessionCardCount;
     if (row.key === 'fontSize') next.fontSize = Number(row.value) || DEFAULT_SETTINGS.fontSize;
-    if (row.key === 'fontColor') next.fontColor = row.value || DEFAULT_SETTINGS.fontColor;
     if (row.key === 'headerImage') next.headerImage = row.value || DEFAULT_SETTINGS.headerImage;
     if (row.key === 'fontFamily') {
       // 字体键必须是当前注册的字体之一：老安装里可能存有已被移除的字体键。

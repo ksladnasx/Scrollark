@@ -38,7 +38,6 @@ export type CardInput = Omit<CardRecord, 'id' | 'documentTitle' | 'createdAt' | 
 export type Settings = {
   sessionCardCount: number;
   fontSize: number;
-  fontColor: string;
   headerImage: string;
   fontFamily: string;
   cardHeaderImageMode: CardHeaderImageMode;
