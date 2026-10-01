@@ -1,8 +1,12 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Statistics } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
+
+// 趋势图气泡宽度与判定高度：气泡显示在点的上方，点太靠上时改到下方。
+const TOOLTIP_WIDTH = 80;
+const TOOLTIP_ABOVE_MIN_Y = 50;
 
 export function StatisticsScreen({ stats }: { stats: Statistics }) {
   const theme = useAppTheme();
@@ -13,6 +17,7 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
   const goalReached = goalOn && stats.todayGets >= stats.goal;
   const weekHits = goalOn ? stats.week.filter((day) => day.count >= stats.goal).length : 0;
   const [chartWidth, setChartWidth] = React.useState(0);
+  const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
   const chartHeight = 128;
   const points = stats.week.map((day, index) => {
     const x = stats.week.length <= 1 || chartWidth <= 0 ? 0 : (chartWidth / (stats.week.length - 1)) * index;
@@ -22,15 +27,19 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
   const onChartLayout = React.useCallback((event: LayoutChangeEvent) => {
     setChartWidth(event.nativeEvent.layout.width);
   }, []);
+  const selectedPoint = selectedDay === null ? null : points.find((point) => point.day === selectedDay) ?? null;
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
-      <View style={[styles.heroStat, { backgroundColor: theme.accent }] }>
-        <Text style={[styles.heroValue, { color: theme.paper }]}>{stats.todayGets}</Text>
-        <Text style={styles.heroLabel}>今日吸收卡片</Text>
-        <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${progress}%` }]} /></View>
-        <Text style={styles.progressText}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
+      {/* 吸收概览：背景与文字随明暗模式取同向色（浅色模式浅卡片、深色模式深卡片） */}
+      <View style={[styles.heroStat, { backgroundColor: theme.accentSoft }] }>
+        <Text style={[styles.heroValue, { color: theme.ink }]}>{stats.todayGets}</Text>
+        <Text style={[styles.heroLabel, { color: theme.ink }]}>今日吸收卡片</Text>
+        <View style={[styles.progressTrack, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]}>
+          <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.ink }]} />
+        </View>
+        <Text style={[styles.progressText, { color: theme.ink }]}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
       </View>
 
       <View style={styles.grid}>
@@ -82,17 +91,54 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
                 />
               );
             }) : null}
-            {chartWidth > 0 ? points.map((point) => (
-              <View key={`trend-point-${point.day}`} style={[styles.trendPoint, { left: point.x - 5, top: point.y - 5, backgroundColor: theme.accentSoft, borderColor: theme.ink }]} />
-            )) : null}
+            {chartWidth > 0 ? points.map((point) => {
+              const selected = selectedDay === point.day;
+              return (
+                <Pressable
+                  key={`trend-point-${point.day}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${point.day} get ${point.count} 张`}
+                  onPress={() => setSelectedDay((current) => (current === point.day ? null : point.day))}
+                  style={[styles.trendPointHit, { left: point.x - 16, top: point.y - 16 }]}
+                >
+                  <View
+                    style={[
+                      styles.trendPoint,
+                      selected
+                        ? [styles.trendPointSelected, { backgroundColor: theme.accent, borderColor: theme.accent }]
+                        : { backgroundColor: theme.accentSoft, borderColor: theme.ink },
+                    ]}
+                  />
+                </Pressable>
+              );
+            }) : null}
+            {chartWidth > 0 && selectedPoint ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.trendTooltip,
+                  {
+                    left: Math.max(0, Math.min(chartWidth - TOOLTIP_WIDTH, selectedPoint.x - TOOLTIP_WIDTH / 2)),
+                    top: selectedPoint.y >= TOOLTIP_ABOVE_MIN_Y ? selectedPoint.y - 46 : selectedPoint.y + 18,
+                    backgroundColor: theme.ink,
+                  },
+                ]}
+              >
+                <Text style={[styles.trendTooltipValue, { color: theme.paper }]}>{selectedPoint.count} 张</Text>
+                <Text style={[styles.trendTooltipDay, { color: theme.paper }]}>{selectedPoint.day}</Text>
+              </View>
+            ) : null}
           </View>
           <View style={styles.lineLabels}>
-            {points.map((day, index) => (
-              <View key={`week-label-${day.day}-${index}`} style={styles.lineLabelItem}>
-                <Text style={[styles.lineValue, { color: theme.ink }]}>{day.count}</Text>
-                <Text style={[styles.lineLabel, { color: theme.inkMuted }]}>{day.day}</Text>
-              </View>
-            ))}
+            {points.map((day, index) => {
+              const selected = selectedDay === day.day;
+              return (
+                <View key={`week-label-${day.day}-${index}`} style={styles.lineLabelItem}>
+                  <Text style={[styles.lineValue, { color: selected ? theme.accent : theme.ink }]}>{day.count}</Text>
+                  <Text style={[styles.lineLabel, { color: theme.inkMuted }]}>{day.day}</Text>
+                </View>
+              );
+            })}
           </View>
         </View>
       </View>
@@ -116,12 +162,12 @@ const styles = StyleSheet.create({
   eyebrow: { color: palette.inkMuted, textTransform: 'uppercase', fontWeight: '900', letterSpacing: 1.2, fontSize: 12 },
   title: { color: palette.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1.2 },
   subtitle: { color: palette.inkMuted, fontSize: 15, lineHeight: 23 },
-  heroStat: { borderRadius: radius.xl, backgroundColor: palette.accent, padding: 22, gap: 8 },
-  heroValue: { color: palette.paper, fontSize: 64, fontWeight: '900', letterSpacing: -2.2 },
-  heroLabel: { color: 'rgba(255,249,238,0.82)', fontSize: 16, fontWeight: '800' },
-  progressTrack: { height: 8, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 4, marginTop: 10, overflow: 'hidden' },
-  progressFill: { height: 8, backgroundColor: palette.accentSoft, borderRadius: 4 },
-  progressText: { color: 'rgba(255,249,238,0.72)', fontSize: 12, fontWeight: '700' },
+  heroStat: { borderRadius: radius.xl, backgroundColor: palette.accentSoft, padding: 22, gap: 8 },
+  heroValue: { color: palette.ink, fontSize: 64, fontWeight: '900', letterSpacing: -2.2 },
+  heroLabel: { color: palette.ink, opacity: 0.78, fontSize: 16, fontWeight: '800' },
+  progressTrack: { height: 8, backgroundColor: 'rgba(23,22,17,0.18)', borderRadius: 4, marginTop: 10, overflow: 'hidden' },
+  progressFill: { height: 8, backgroundColor: palette.ink, borderRadius: 4 },
+  progressText: { color: palette.ink, opacity: 0.72, fontSize: 12, fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   metric: { width: '48%', borderRadius: radius.lg, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 16 },
   metricValue: { color: palette.ink, fontSize: 30, fontWeight: '900', letterSpacing: -0.8 },
@@ -139,7 +185,19 @@ const styles = StyleSheet.create({
   linePlot: { position: 'relative', width: '100%' },
   gridLine: { position: 'absolute', left: 0, right: 0, height: 1, opacity: 0.72 },
   trendLine: { position: 'absolute', height: 3, borderRadius: 2 },
-  trendPoint: { position: 'absolute', width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
+  trendPointHit: { position: 'absolute', width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  trendPoint: { width: 10, height: 10, borderRadius: 5, borderWidth: 2 },
+  trendPointSelected: { width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
+  trendTooltip: {
+    position: 'absolute',
+    width: TOOLTIP_WIDTH,
+    borderRadius: radius.md,
+    paddingVertical: 6,
+    alignItems: 'center',
+    gap: 1,
+  },
+  trendTooltipValue: { fontSize: 14, fontWeight: '900' },
+  trendTooltipDay: { fontSize: 10, fontWeight: '700', opacity: 0.72 },
   lineLabels: { flexDirection: 'row', justifyContent: 'space-between' },
   lineLabelItem: { flex: 1, alignItems: 'center', gap: 3 },
   lineValue: { color: palette.ink, fontSize: 12, fontWeight: '900' },

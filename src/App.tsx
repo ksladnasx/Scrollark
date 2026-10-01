@@ -13,6 +13,7 @@ import { SearchScreen } from './screens/SearchScreen';
 import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
+import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
 import { appFonts } from './theme/fonts';
@@ -54,6 +55,9 @@ export default function App() {
   const [cards, setCards] = React.useState<CardRecord[]>([]);
   const [favorites, setFavorites] = React.useState<CardRecord[]>([]);
   const [error, setError] = React.useState('');
+  // 分享海报挂在 App 主窗口层级渲染：整屏截图只能捕获主窗口，
+  // 放进 <Modal>（独立 Dialog 窗口）里的内容截不到。
+  const [sharingCard, setSharingCard] = React.useState<CardRecord | null>(null);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
 
   const refresh = React.useCallback(async () => {
@@ -150,7 +154,15 @@ export default function App() {
       <ThemeProvider settings={settings}>
         <SafeAreaProvider>
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
-          <SearchScreen settings={settings} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
+          <SearchScreen settings={settings} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} onShare={setSharingCard} />
+          {sharingCard ? (
+            <ShareCardOverlay
+              key={sharingCard.id}
+              card={sharingCard}
+              settings={settings}
+              onDone={() => setSharingCard(null)}
+            />
+          ) : null}
         </SafeAreaProvider>
       </ThemeProvider>
     );
@@ -205,10 +217,18 @@ export default function App() {
             <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
               <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
               <View style={styles.pageBody}>
-                {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings })}
+                {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings, onShare: setSharingCard })}
               </View>
             </SafeAreaView>
           )}
+          {sharingCard ? (
+            <ShareCardOverlay
+              key={sharingCard.id}
+              card={sharingCard}
+              settings={settings}
+              onDone={() => setSharingCard(null)}
+            />
+          ) : null}
         </View>
       </SafeAreaProvider>
     </ThemeProvider>
@@ -245,6 +265,7 @@ function renderPage(
     setRoute: React.Dispatch<React.SetStateAction<Route>>;
     refresh: () => Promise<void>;
     setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+    onShare: (card: CardRecord) => void;
   },
 ) {
   switch (tab) {
@@ -256,10 +277,11 @@ function renderPage(
           settings={data.settings}
           onImported={() => void data.refresh()}
           onStartSession={() => data.setRoute({ name: 'session' })}
+          onShare={data.onShare}
         />
       );
     case 'favorites':
-      return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} />;
+      return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
       return <StatisticsScreen stats={data.stats} />;
     case 'settings':

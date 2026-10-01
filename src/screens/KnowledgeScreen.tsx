@@ -13,7 +13,7 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 import { parseMarkdownBlocks } from '../utils/markdown';
 
-type Props = { documents: DocumentRecord[]; cards: CardRecord[]; settings: Settings; onImported: () => void; onStartSession: () => void };
+type Props = { documents: DocumentRecord[]; cards: CardRecord[]; settings: Settings; onImported: () => void; onStartSession: () => void; onShare?: (card: CardRecord) => void };
 
 // 预览分页渲染：一次只挂载一小段块，滚动到底部附近再追加，长文档不再卡顿。
 const PREVIEW_BLOCK_PAGE = 40;
@@ -24,7 +24,7 @@ function formatDate(iso: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-export function KnowledgeScreen({ documents, cards, settings, onImported, onStartSession }: Props) {
+export function KnowledgeScreen({ documents, cards, settings, onImported, onStartSession, onShare }: Props) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const fontFamily = settings.fontFamily;
@@ -219,6 +219,7 @@ export function KnowledgeScreen({ documents, cards, settings, onImported, onStar
         settings={settings}
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
+        onShare={onShare}
       />
 
       <Modal visible={previewDoc !== null} transparent animationType="slide" onRequestClose={() => setPreviewDocId(null)}>

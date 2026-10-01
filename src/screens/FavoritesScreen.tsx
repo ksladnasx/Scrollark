@@ -8,11 +8,11 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { palette } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
 
-type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void };
+type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void; onShare?: (card: CardRecord) => void };
 
 const CARD_ITEM_HEIGHT = 370;
 
-export function FavoritesScreen({ cards, settings, onChanged }: Props) {
+export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) {
   const theme = useAppTheme();
   const fontFamily = settings.fontFamily;
   const [selectedCardId, setSelectedCardId] = React.useState<number | null>(null);
@@ -69,6 +69,7 @@ export function FavoritesScreen({ cards, settings, onChanged }: Props) {
         settings={settings}
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
+        onShare={onShare}
       />
     </View>
   );

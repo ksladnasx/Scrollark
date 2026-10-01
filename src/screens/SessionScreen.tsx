@@ -1,14 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Alert, Animated, BackHandler, Easing, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
-import { captureScreen, releaseCapture } from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
+import { Animated, BackHandler, Easing, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
 import { AppButton } from '../components/AppButton';
-import { resolveCardImageSource } from '../components/CardHeaderImage';
 import { KnowledgeCard } from '../components/KnowledgeCard';
-import { SharePoster } from '../components/SharePoster';
+import { ShareCardOverlay } from '../components/ShareCardOverlay';
 import { buildSessionCards, importMarkdownDocument, markGot, toggleFavorite } from '../data/repository';
 import type { CardRecord, SessionSummary, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -101,67 +98,8 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
     setHeartPops((pops) => pops.filter((pop) => pop.id !== id));
   }, []);
 
-  // 分享知识卡片：view-shot 按 tag 找视图在 RN 0.83 + Fabric 上不可用
-  // （No view found with reactTag），因此采用整屏截图路径——
-  // 先全屏渲染一张专门设计的分享海报（高度随内容自适应，过长内容等比缩放适配屏高），
-  // 短暂展示后整屏截图，再弹出系统分享面板（QQ / 微信在分享列表里）。
-  const [sharing, setSharing] = React.useState(false);
-  const [posterCard, setPosterCard] = React.useState<CardRecord | null>(null);
-  const [posterSource, setPosterSource] = React.useState<ImageSourcePropType | null>(null);
-  const [posterHeight, setPosterHeight] = React.useState(0);
-  const posterImageResolveRef = React.useRef<(() => void) | null>(null);
-  const posterFooterHeight = 46 + Math.max(insets.bottom, 10);
-  const posterScale =
-    posterHeight > 0 ? Math.min(1, (height - posterFooterHeight - 12) / posterHeight) : 1;
-
-  const shareCard = React.useCallback(
-    async (card: CardRecord) => {
-      if (sharing) return;
-      let uri: string | null = null;
-      try {
-        setSharing(true);
-        // 先解析当前实际生效的头图（会话内卡片对象上的字段可能是会话开始时的快照），
-        // 解析完成后再挂载海报，避免海报里出现与卡片不一致的兜底图。
-        const imageSource = await resolveCardImageSource(
-          card.id,
-          settings.cardBackgroundImageUrl,
-          settings.cardImagePoolSize,
-        );
-        const imageReady = new Promise<void>((resolve) => {
-          posterImageResolveRef.current = resolve;
-        });
-        setPosterSource(imageSource);
-        setPosterCard(card);
-        // 等海报完成布局、等比缩放，且头图真正解码上屏（3 秒超时兜底）后再截图。
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-        await Promise.race([imageReady, new Promise<void>((resolve) => setTimeout(resolve, 3000))]);
-        await new Promise((resolve) => setTimeout(resolve, 80));
-        uri = await captureScreen({ format: 'png', quality: 1, result: 'tmpfile' });
-        setPosterCard(null);
-        const available = await Sharing.isAvailableAsync();
-        if (!available) {
-          Alert.alert('无法分享', '当前设备不支持系统分享。');
-          return;
-        }
-        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '分享知识卡片' });
-      } catch (error) {
-        setPosterCard(null);
-        setPosterSource(null);
-        Alert.alert('分享失败', error instanceof Error ? error.message : '请稍后再试');
-      } finally {
-        setSharing(false);
-        setPosterHeight(0);
-        if (uri) {
-          try {
-            releaseCapture(uri);
-          } catch {
-            // 临时文件清理失败不影响分享结果。
-          }
-        }
-      }
-    },
-    [sharing, settings.cardBackgroundImageUrl, settings.cardImagePoolSize],
-  );
+  // 分享知识卡片：海报整屏挂载 → 截图 → 系统分享，流程见 ShareCardOverlay。
+  const [sharingCard, setSharingCard] = React.useState<CardRecord | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -346,12 +284,12 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
         <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? theme.red : theme.ink} />
         <Text style={[styles.actionText, { color: theme.inkMuted }]}>批注</Text>
       </Pressable>
-      <Pressable onPress={() => { void shareCard(card); }} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
+      <Pressable onPress={() => setSharingCard(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
         <Ionicons name="share-social-outline" size={23} color={theme.ink} />
         <Text style={[styles.actionText, { color: theme.inkMuted }]}>分享</Text>
       </Pressable>
     </View>
-  ), [handleFavorite, handleGet, insets.bottom, openAnnotation, shareCard, theme]);
+  ), [handleFavorite, handleGet, insets.bottom, openAnnotation, theme]);
 
   const renderItem = React.useCallback(({ item }: { item: SessionItem }) => {
     if (isEndPage(item)) {
@@ -443,23 +381,13 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
           onSaved={handleAnnotationSaved}
         />
       ) : null}
-      {posterCard && posterSource ? (
-        <View style={styles.posterOverlay} pointerEvents="none">
-          <View style={{ transform: [{ scale: posterScale }], transformOrigin: '50% 0%' }}>
-            <SharePoster
-              card={posterCard}
-              settings={settings}
-              width={width}
-              imageSource={posterSource}
-              onLayout={setPosterHeight}
-              onImageLoaded={() => posterImageResolveRef.current?.()}
-            />
-          </View>
-          <View style={[styles.posterFooterBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            <Text style={styles.posterFooterBrand}>Scrollark</Text>
-            <Text style={styles.posterFooterNote}>让每一次阅读都有收获</Text>
-          </View>
-        </View>
+      {sharingCard ? (
+        <ShareCardOverlay
+          key={sharingCard.id}
+          card={sharingCard}
+          settings={settings}
+          onDone={() => setSharingCard(null)}
+        />
       ) : null}
     </View>
   );
@@ -494,21 +422,4 @@ const styles = StyleSheet.create({
   endBody: { color: palette.inkMuted, fontSize: 15, lineHeight: 23, textAlign: 'center', marginBottom: 8 },
   sessionRoot: { flex: 1, backgroundColor: '#FFFFFF' },
   cardFooterBar: { borderTopWidth: 1 },
-  posterOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#FFF9EE', zIndex: 100 },
-  posterFooterBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingTop: 10,
-    paddingHorizontal: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#DED2BE',
-    backgroundColor: '#FFF9EE',
-  },
-  posterFooterBrand: { fontSize: 14, fontWeight: '900', color: '#11110F', letterSpacing: 0.5 },
-  posterFooterNote: { fontSize: 11, fontWeight: '700', color: '#6E6A5E' },
 });

@@ -149,7 +149,7 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
-      <Section icon="text-outline" title="阅读偏好" description="字体、字号与配色立即应用到卡片正文；显示模式跟随本页即时生效。" theme={theme} settings={settings}>
+      <Section icon="text-outline" title="阅读偏好" theme={theme} settings={settings}>
         <Rows theme={theme}>
           <SelectRow
             label="阅读字体"
@@ -192,7 +192,7 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
         </Rows>
       </Section>
 
-      <Section icon="image-outline" title="首页壁纸" description="首页背景支持多个壁纸源，当前源不可用时自动回退到其余源。长按首页背景可保存壁纸。" theme={theme} settings={settings}>
+      <Section icon="image-outline" title="首页壁纸" theme={theme} settings={settings}>
         <Rows theme={theme}>
           <View style={styles.actionRow}>
             <AppButton label="立即切换首页背景" icon="refresh" variant="dark" loading={homeBusy} onPress={() => { void switchHomeBackground(); }} />
@@ -239,7 +239,7 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
         {homeStatus ? <StatusLine status={homeStatus} theme={theme} fontFamily={fontFamily} /> : null}
       </Section>
 
-      <Section icon="layers-outline" title="卡片背景" description="刷卡页与卡片详情顶部的背景图。远程壁纸按所选源加载，源不可用时自动回退；头图图池让多张卡片复用少量图片，显著降低流量消耗。" theme={theme} settings={settings}>
+      <Section icon="layers-outline" title="卡片背景" theme={theme} settings={settings}>
         <Rows theme={theme}>
           <ChipRow label="显示模式" theme={theme} settings={settings}>
             {([
@@ -296,7 +296,7 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
         {cardStatus ? <StatusLine status={cardStatus} theme={theme} fontFamily={fontFamily} /> : null}
       </Section>
 
-      <Section icon="speedometer-outline" title="阅读节奏" description="每轮卡片数决定一次抽取多少张；每日目标驱动首页打卡与统计页的连续天数。" theme={theme} settings={settings}>
+      <Section icon="speedometer-outline" title="阅读节奏" theme={theme} settings={settings}>
         <Rows theme={theme}>
           <ChipRow label="每轮卡片数" theme={theme} settings={settings}>
             {[10, 20, 30].map((count) => (
@@ -337,7 +337,7 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
   );
 }
 
-function Section({ icon, title, description, children, theme, settings }: { icon: keyof typeof Ionicons.glyphMap; title: string; description: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
+function Section({ icon, title, children, theme, settings }: { icon: keyof typeof Ionicons.glyphMap; title: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>
@@ -346,7 +346,6 @@ function Section({ icon, title, description, children, theme, settings }: { icon
         </View>
         <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily: settings.fontFamily }]}>{title}</Text>
       </View>
-      {description ? <Text style={[styles.sectionDesc, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>{description}</Text> : null}
       <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>{children}</View>
     </View>
   );
@@ -455,7 +454,6 @@ const styles = StyleSheet.create({
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
-  sectionDesc: { fontSize: 12, lineHeight: 18, paddingHorizontal: 2 },
   card: { borderRadius: radius.xl, borderWidth: 1, overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
   rowInner: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },

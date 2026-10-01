@@ -9,7 +9,7 @@ import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/tokens';
 
-type Props = { settings: Settings; onBack: () => void };
+type Props = { settings: Settings; onBack: () => void; onShare?: (card: CardRecord) => void };
 
 // 搜索防抖间隔：输入停顿后再查询 SQLite，避免每个字符都触发全表 LIKE。
 const SEARCH_DEBOUNCE_MS = 280;
@@ -19,7 +19,7 @@ function snippetOf(card: CardRecord) {
   return source.length > 90 ? `${source.slice(0, 90)}…` : source;
 }
 
-export function SearchScreen({ settings, onBack }: Props) {
+export function SearchScreen({ settings, onBack, onShare }: Props) {
   const theme = useAppTheme();
   const fontFamily = settings.fontFamily;
   const [query, setQuery] = React.useState('');
@@ -164,6 +164,7 @@ export function SearchScreen({ settings, onBack }: Props) {
         settings={settings}
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
+        onShare={onShare}
       />
     </SafeAreaView>
   );
