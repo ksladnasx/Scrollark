@@ -3,9 +3,9 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AppButton } from '../components/AppButton';
 import type { SessionSummary } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette, radius } from '../theme/tokens';
+import { masteryColors, palette, radius } from '../theme/tokens';
 
-export function SessionEndScreen({ summary, onHome, onContinue }: { summary: SessionSummary; onHome: () => void; onContinue: () => void }) {
+export function SessionEndScreen({ summary, onHome, onContinue, onStartReview }: { summary: SessionSummary; onHome: () => void; onContinue: () => void; onStartReview?: () => void }) {
   const theme = useAppTheme();
   return (
     <View style={[styles.wrap, { backgroundColor: theme.paper }] }>
@@ -19,8 +19,15 @@ export function SessionEndScreen({ summary, onHome, onContinue }: { summary: Ses
           <Metric label="收藏" value={summary.favorites} />
           <Metric label="批注" value={summary.annotations} />
         </View>
+        {summary.got > 0 ? (
+          <View style={styles.nextRow}>
+            <View style={[styles.nextDot, { backgroundColor: masteryColors[3] }]} />
+            <Text style={[styles.nextText, { color: theme.inkMuted }]}>新 get 的 {summary.got} 张卡片将在明天进入第一次复习。</Text>
+          </View>
+        ) : null}
         <View style={styles.actions}>
           <AppButton label="继续下一轮" icon="refresh-outline" onPress={onContinue} />
+          {onStartReview ? <AppButton label="去复习" icon="repeat" variant="light" onPress={onStartReview} /> : null}
           <AppButton label="返回首页" icon="home-outline" variant="light" onPress={onHome} />
         </View>
       </View>
@@ -48,5 +55,8 @@ const styles = StyleSheet.create({
   metric: { width: '47.8%', borderRadius: radius.lg, backgroundColor: palette.paperSoft, padding: 15 },
   metricValue: { color: palette.ink, fontSize: 30, fontWeight: '900' },
   metricLabel: { color: palette.inkMuted, fontSize: 12, fontWeight: '800' },
+  nextRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  nextDot: { width: 8, height: 8, borderRadius: 4 },
+  nextText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '700' },
   actions: { gap: 10, marginTop: 10 },
 });

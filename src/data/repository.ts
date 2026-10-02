@@ -1,7 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
-import type { CardRecord, DocumentRecord, Settings, Statistics } from '../domain/types';
+import type { CardRecord, DocumentRecord, MasteryRating, Settings, Statistics } from '../domain/types';
 import { parseMarkdownToCards } from '../utils/markdown';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL, HOME_BACKGROUND_IMAGE_URLS } from '../config/imageUrls';
 import { fontOptions } from '../theme/fonts';
@@ -96,6 +96,21 @@ async function migrate() {
   const cardColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(cards)');
   if (!cardColumns.some((column) => column.name === 'headerImageUrl')) {
     await db.execAsync('ALTER TABLE cards ADD COLUMN headerImageUrl TEXT;');
+  }
+  // 评级与间隔重复：mastery 记最近一次自评（1 忘了 / 2 模糊 / 3 秒懂），
+  // reviewStage 决定复习间隔档位，nextReviewAt 为下次到期时间。
+  if (!cardColumns.some((column) => column.name === 'mastery')) {
+    await db.execAsync('ALTER TABLE cards ADD COLUMN mastery INTEGER;');
+  }
+  if (!cardColumns.some((column) => column.name === 'nextReviewAt')) {
+    await db.execAsync('ALTER TABLE cards ADD COLUMN nextReviewAt TEXT;');
+  }
+  if (!cardColumns.some((column) => column.name === 'reviewStage')) {
+    await db.execAsync('ALTER TABLE cards ADD COLUMN reviewStage INTEGER NOT NULL DEFAULT 0;');
+    await db.execAsync('CREATE INDEX IF NOT EXISTS idx_cards_next_review ON cards(nextReviewAt);');
+  }
+  if (!cardColumns.some((column) => column.name === 'forgetCount')) {
+    await db.execAsync('ALTER TABLE cards ADD COLUMN forgetCount INTEGER NOT NULL DEFAULT 0;');
   }
 
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
@@ -330,7 +345,7 @@ export async function listFavoriteCards() {
   return db.getAllAsync<CardRecord>(`${cardSelect} WHERE cards.isFavorite = 1 ORDER BY cards.lastGotAt DESC, cards.createdAt DESC`);
 }
 
-// 全局搜索：标题 / 正文 / 批注 任意命中即返回，标题命中排前。
+// 全局搜索：标题 / 正文 / 批注 / 来源文档名 任意命中即返回，标题命中排前。
 export async function searchCards(query: string, limit = 50): Promise<CardRecord[]> {
   const clean = query.trim();
   if (!clean) return [];
@@ -338,9 +353,10 @@ export async function searchCards(query: string, limit = 50): Promise<CardRecord
   const db = await getDb();
   return db.getAllAsync<CardRecord>(
     `${cardSelect}
-     WHERE cards.title LIKE ? ESCAPE '\\' OR cards.content LIKE ? ESCAPE '\\' OR annotations.note LIKE ? ESCAPE '\\'
+     WHERE cards.title LIKE ? ESCAPE '\\' OR cards.content LIKE ? ESCAPE '\\' OR annotations.note LIKE ? ESCAPE '\\' OR documents.title LIKE ? ESCAPE '\\'
      ORDER BY CASE WHEN cards.title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, cards.lastGotAt IS NOT NULL, cards.lastGotAt DESC, cards.sortOrder ASC
      LIMIT ?`,
+    like,
     like,
     like,
     like,
@@ -351,26 +367,117 @@ export async function searchCards(query: string, limit = 50): Promise<CardRecord
 
 export async function buildSessionCards(limit: number) {
   const db = await getDb();
+  // GET 流程只出新卡：已 get 的卡一律交给复习流程（按到期时间回流）。
   const rows = await db.getAllAsync<CardRecord>(
     `${cardSelect}
-     ORDER BY CASE WHEN cards.isGot = 0 THEN 0 ELSE 1 END, COALESCE(cards.lastGotAt, '1970-01-01T00:00:00.000Z') ASC, RANDOM()
+     WHERE cards.isGot = 0
+     ORDER BY RANDOM()
      LIMIT ?`,
     limit,
   );
   return rows;
 }
 
-export async function markGot(cardId: number, got: boolean) {
+// 复习流程的到期卡片：遗忘过 / 评过「忘了」的重点优先，其余按逾期最久排前。
+// nextReviewAt 为空的历史已 get 卡视作到期，进入首次复习。
+export async function buildReviewCards(limit = 50) {
+  const db = await getDb();
+  const now = nowIso();
+  return db.getAllAsync<CardRecord>(
+    `${cardSelect}
+     WHERE cards.isGot = 1 AND (cards.nextReviewAt IS NULL OR cards.nextReviewAt <= ?)
+     ORDER BY CASE WHEN cards.mastery = 1 OR cards.forgetCount > 0 THEN 0 ELSE 1 END ASC,
+              COALESCE(cards.nextReviewAt, '1970-01-01T00:00:00.000Z') ASC
+     LIMIT ?`,
+    now,
+    limit,
+  );
+}
+
+// 提前复习：不等到期，直接复习「新近记忆」（刚 get 未评级）与「巩固中」（档位 0-2 未到期）的卡片。
+// 新近记忆排前（越早 get 的越先），巩固中按最近的到期时间排前。
+export async function buildAheadReviewCards(limit = 30) {
+  const db = await getDb();
+  const now = nowIso();
+  return db.getAllAsync<CardRecord>(
+    `${cardSelect}
+     WHERE cards.isGot = 1 AND cards.nextReviewAt IS NOT NULL AND cards.nextReviewAt > ?
+       AND (cards.mastery IS NULL OR cards.reviewStage <= 2)
+     ORDER BY CASE WHEN cards.mastery IS NULL THEN 0 ELSE 1 END ASC, cards.nextReviewAt ASC
+     LIMIT ?`,
+    now,
+    limit,
+  );
+}
+
+// 首页「今天推荐」：随机挑几张未读新卡，让内容本身成为 GET 的入口。
+export async function getRecommendedCards(limit = 3): Promise<CardRecord[]> {
+  const db = await getDb();
+  return db.getAllAsync<CardRecord>(`${cardSelect} WHERE cards.isGot = 0 ORDER BY RANDOM() LIMIT ?`, limit);
+}
+
+// 简化版间隔重复：reviewStage 对应间隔档位（天）。
+// 评级规则：秒懂升一档（封顶），模糊降一档（不低于首档），忘了归零重来。
+export const REVIEW_INTERVAL_DAYS = [1, 3, 7, 16, 35] as const;
+
+// GET 流程：标记已学并安排首次复习（明天进入「新近记忆」）；评级留给复习流程。
+export async function markCardGot(cardId: number) {
   const db = await getDb();
   const time = nowIso();
+  const next = new Date(time);
+  next.setDate(next.getDate() + 1);
   await db.withExclusiveTransactionAsync(async (txn) => {
-    if (got) {
-      await txn.runAsync('UPDATE cards SET isGot = 1, getCount = getCount + 1, lastGotAt = ? WHERE id = ?', time, cardId);
-      await txn.runAsync('INSERT INTO events(cardId, type, createdAt) VALUES (?, ?, ?)', cardId, 'get', time);
-    } else {
-      await txn.runAsync('UPDATE cards SET isGot = 0 WHERE id = ?', cardId);
-      await txn.runAsync('INSERT INTO events(cardId, type, createdAt) VALUES (?, ?, ?)', cardId, 'unget', time);
-    }
+    await txn.runAsync(
+      'UPDATE cards SET isGot = 1, getCount = getCount + 1, lastGotAt = ?, nextReviewAt = ? WHERE id = ?',
+      time,
+      next.toISOString(),
+      cardId,
+    );
+    await txn.runAsync('INSERT INTO events(cardId, type, createdAt) VALUES (?, ?, ?)', cardId, 'get', time);
+  });
+}
+
+export async function rateCard(cardId: number, rating: MasteryRating): Promise<{ mastery: MasteryRating; reviewStage: number; nextReviewAt: string }> {
+  const db = await getDb();
+  const time = nowIso();
+  let nextStage = 0;
+  let nextReviewAt = time;
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    const card = await txn.getFirstAsync<{ reviewStage: number }>('SELECT reviewStage FROM cards WHERE id = ?', cardId);
+    if (!card) throw new Error('卡片不存在或已被删除');
+    const stage = rating === 3
+      ? Math.min(card.reviewStage + 1, REVIEW_INTERVAL_DAYS.length - 1)
+      : rating === 2
+        ? Math.max(card.reviewStage - 1, 0)
+        : 0;
+    const next = new Date(time);
+    next.setDate(next.getDate() + REVIEW_INTERVAL_DAYS[stage]);
+    nextStage = stage;
+    nextReviewAt = next.toISOString();
+    await txn.runAsync(
+      'UPDATE cards SET isGot = 1, getCount = getCount + 1, lastGotAt = ?, mastery = ?, reviewStage = ?, nextReviewAt = ?, forgetCount = forgetCount + ? WHERE id = ?',
+      time,
+      rating,
+      stage,
+      nextReviewAt,
+      rating === 1 ? 1 : 0,
+      cardId,
+    );
+    await txn.runAsync(
+      'INSERT INTO events(cardId, type, createdAt) VALUES (?, ?, ?)',
+      cardId,
+      rating === 3 ? 'rate-clear' : rating === 2 ? 'rate-fuzzy' : 'rate-forgot',
+      time,
+    );
+  });
+  return { mastery: rating, reviewStage: nextStage, nextReviewAt };
+}
+
+export async function unmarkGot(cardId: number) {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.runAsync('UPDATE cards SET isGot = 0 WHERE id = ?', cardId);
+    await txn.runAsync('INSERT INTO events(cardId, type, createdAt) VALUES (?, ?, ?)', cardId, 'unget', nowIso());
   });
 }
 
@@ -459,12 +566,26 @@ async function computeStreakDays(db: SQLite.SQLiteDatabase, goal: number): Promi
 
 export async function getStatistics(): Promise<Statistics> {
   const db = await getDb();
-  const [totalCards, gotCards, favoriteCards, annotatedCards, documents] = await Promise.all([
+  const now = nowIso();
+  const tomorrowStart = startOfLocalDay();
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const dayAfterStart = new Date(tomorrowStart);
+  dayAfterStart.setDate(tomorrowStart.getDate() + 1);
+  const todayStart = startOfLocalDay();
+  const [totalCards, gotCards, favoriteCards, annotatedCards, documents, dueCards, recent, strengthening, mastered, weak, dueWeak, tomorrowDue, todayReviewRow] = await Promise.all([
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isFavorite = 1'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM annotations WHERE TRIM(note) != ""'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM documents'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND nextReviewAt IS NOT NULL AND nextReviewAt <= ?', now),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND mastery IS NULL'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND mastery IS NOT NULL AND reviewStage <= 2'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE reviewStage >= 3'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE forgetCount > 0'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND (mastery = 1 OR forgetCount > 0) AND nextReviewAt IS NOT NULL AND nextReviewAt <= ?', now),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE nextReviewAt >= ? AND nextReviewAt < ?', tomorrowStart.toISOString(), dayAfterStart.toISOString()),
+    db.getFirstAsync<CountRow>("SELECT COUNT(*) as count FROM events WHERE type LIKE 'rate-%' AND createdAt >= ? AND createdAt < ?", todayStart.toISOString(), tomorrowStart.toISOString()),
   ]);
 
   const today = startOfLocalDay();
@@ -493,14 +614,232 @@ export async function getStatistics(): Promise<Statistics> {
     favoriteCards: favoriteCards?.count ?? 0,
     annotatedCards: annotatedCards?.count ?? 0,
     todayGets: todayGets?.count ?? 0,
+    todayReviews: todayReviewRow?.count ?? 0,
     goal,
     streakDays,
     week,
     documents: documents?.count ?? 0,
+    dueCount: dueCards?.count ?? 0,
+    recentCount: recent?.count ?? 0,
+    strengtheningCount: strengthening?.count ?? 0,
+    masteredCount: mastered?.count ?? 0,
+    weakCount: weak?.count ?? 0,
+    dueWeakCount: dueWeak?.count ?? 0,
+    tomorrowCount: tomorrowDue?.count ?? 0,
   };
+}
+
+// 打卡热力图数据：按本地日聚合近一年的 get / 评级行为，空缺日期补 0。
+export async function getDailyActivity(days = 364): Promise<{ date: string; count: number }[]> {
+  const db = await getDb();
+  const first = startOfLocalDay();
+  first.setDate(first.getDate() - days);
+  const rows = await db.getAllAsync<{ type: string; createdAt: string }>(
+    "SELECT type, createdAt FROM events WHERE createdAt >= ? AND (type = 'get' OR type LIKE 'rate-%')",
+    first.toISOString(),
+  );
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const stamped = new Date(row.createdAt);
+    if (Number.isNaN(stamped.getTime())) continue;
+    const key = localDayKey(stamped);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const result: { date: string; count: number }[] = [];
+  const cursor = startOfLocalDay();
+  cursor.setDate(cursor.getDate() - days);
+  for (let i = 0; i <= days; i += 1) {
+    const key = localDayKey(cursor);
+    result.push({ date: key, count: counts.get(key) ?? 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
 }
 
 export async function resetAllData() {
   const db = await getDb();
   await db.execAsync('DELETE FROM events; DELETE FROM annotations; DELETE FROM cards; DELETE FROM documents;');
+}
+
+// ===== 数据备份：JSON 导出 / 导入 =====
+
+type BackupDocumentRow = DocumentRecord;
+type BackupCardRow = {
+  id: number;
+  documentId: number;
+  h1: string;
+  h2: string;
+  h3: string;
+  title: string;
+  content: string;
+  sortOrder: number;
+  createdAt: string;
+  isGot: number;
+  isFavorite: number;
+  getCount: number;
+  lastGotAt: string | null;
+  headerImageUrl: string | null;
+  mastery: number | null;
+  nextReviewAt: string | null;
+  reviewStage: number;
+  forgetCount: number;
+};
+
+export type BackupPayload = {
+  app: 'scrollark';
+  schema: 1;
+  exportedAt: string;
+  documents: BackupDocumentRow[];
+  cards: BackupCardRow[];
+  annotations: { id: number; cardId: number; note: string; updatedAt: string }[];
+  events: { id: number; cardId: number | null; type: string; createdAt: string }[];
+  settings: SettingRow[];
+};
+
+// 导出全部数据到用户选择的目录，返回写入的文件 URI（用户取消选目录时返回 null）。
+export async function exportBackupData(): Promise<string | null> {
+  const directory = await Directory.pickDirectoryAsync();
+  if (!directory?.uri) return null;
+  const db = await getDb();
+  const [documents, cards, annotations, events, settings] = await Promise.all([
+    db.getAllAsync<BackupDocumentRow>('SELECT * FROM documents ORDER BY id'),
+    db.getAllAsync<BackupCardRow>('SELECT * FROM cards ORDER BY id'),
+    db.getAllAsync<BackupPayload['annotations'][number]>('SELECT * FROM annotations ORDER BY id'),
+    db.getAllAsync<BackupPayload['events'][number]>('SELECT * FROM events ORDER BY id'),
+    db.getAllAsync<SettingRow>('SELECT key, value FROM settings ORDER BY key'),
+  ]);
+  const payload: BackupPayload = { app: 'scrollark', schema: 1, exportedAt: nowIso(), documents, cards, annotations, events, settings };
+
+  const stamp = new Date();
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const name = `scrollark-backup-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.json`;
+  const file = new File(directory.uri, name);
+  file.create({ intermediates: true, overwrite: true });
+  file.write(JSON.stringify(payload));
+  return file.uri;
+}
+
+// 选择并校验备份文件，返回规范化后的数据；校验失败抛错（由页面提示）。
+export async function readBackupFile(): Promise<BackupPayload> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['application/json', 'text/plain', 'application/octet-stream', '*/*'],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  if (result.canceled || !result.assets?.[0]) throw new Error('未选择备份文件');
+  const asset = result.assets[0];
+  if (!asset.name.toLowerCase().endsWith('.json') && asset.mimeType && !asset.mimeType.includes('json')) {
+    throw new Error('请选择 Scrollark 导出的 JSON 备份文件');
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await new File(asset.uri).text());
+  } catch {
+    throw new Error('备份文件不是有效的 JSON');
+  }
+  return normalizeBackupPayload(parsed);
+}
+
+function normalizeBackupPayload(value: unknown): BackupPayload {
+  if (!value || typeof value !== 'object') throw new Error('不是有效的 Scrollark 备份文件');
+  const data = value as { app?: unknown; schema?: unknown; documents?: unknown; cards?: unknown; annotations?: unknown; events?: unknown; settings?: unknown };
+  if (data.app !== 'scrollark' || !Array.isArray(data.documents) || !Array.isArray(data.cards)) {
+    throw new Error('不是有效的 Scrollark 备份文件');
+  }
+  const record = (row: unknown): Record<string, unknown> => (row && typeof row === 'object' ? (row as Record<string, unknown>) : {});
+  const str = (row: Record<string, unknown>, key: string, fallback = '') => (typeof row[key] === 'string' ? (row[key] as string) : fallback);
+  const num = (row: Record<string, unknown>, key: string, fallback = 0) => {
+    const value = row[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  };
+  const nullableStr = (row: Record<string, unknown>, key: string) => {
+    const value = row[key];
+    return typeof value === 'string' && value !== '' ? value : null;
+  };
+  const isMasterRating = (value: unknown): value is MasteryRating => value === 1 || value === 2 || value === 3;
+
+  const documents = data.documents.map((row, index) => {
+    const item = record(row);
+    return {
+      id: num(item, 'id', index + 1),
+      title: str(item, 'title', '未命名文档'),
+      fileName: str(item, 'fileName'),
+      fileUri: str(item, 'fileUri'),
+      storedPath: str(item, 'storedPath'),
+      content: str(item, 'content'),
+      importedAt: str(item, 'importedAt', nowIso()),
+      cardCount: num(item, 'cardCount'),
+    };
+  });
+  const cards = data.cards.map((row, index) => {
+    const item = record(row);
+    const mastery = item.mastery;
+    return {
+      id: num(item, 'id', index + 1),
+      documentId: num(item, 'documentId'),
+      h1: str(item, 'h1', '未分组'),
+      h2: str(item, 'h2', '未分组'),
+      h3: str(item, 'h3'),
+      title: str(item, 'title'),
+      content: str(item, 'content'),
+      sortOrder: num(item, 'sortOrder'),
+      createdAt: str(item, 'createdAt', nowIso()),
+      isGot: num(item, 'isGot') === 1 ? 1 : 0,
+      isFavorite: num(item, 'isFavorite') === 1 ? 1 : 0,
+      getCount: num(item, 'getCount'),
+      lastGotAt: nullableStr(item, 'lastGotAt'),
+      headerImageUrl: nullableStr(item, 'headerImageUrl'),
+      mastery: isMasterRating(mastery) ? mastery : null,
+      nextReviewAt: nullableStr(item, 'nextReviewAt'),
+      reviewStage: Math.max(0, Math.min(REVIEW_INTERVAL_DAYS.length - 1, num(item, 'reviewStage'))),
+      forgetCount: Math.max(0, num(item, 'forgetCount')),
+    };
+  });
+  const annotations = (Array.isArray(data.annotations) ? data.annotations : []).map((row, index) => {
+    const item = record(row);
+    return { id: num(item, 'id', index + 1), cardId: num(item, 'cardId'), note: str(item, 'note'), updatedAt: str(item, 'updatedAt', nowIso()) };
+  });
+  const events = (Array.isArray(data.events) ? data.events : []).map((row, index) => {
+    const item = record(row);
+    return { id: num(item, 'id', index + 1), cardId: num(item, 'cardId', -1) >= 0 ? num(item, 'cardId') : null, type: str(item, 'type'), createdAt: str(item, 'createdAt', nowIso()) };
+  });
+  const settings = (Array.isArray(data.settings) ? data.settings : [])
+    .filter((row) => str(record(row), 'key') !== '')
+    .map((row) => ({ key: str(record(row), 'key'), value: str(record(row), 'value') }));
+
+  return { app: 'scrollark', schema: 1, exportedAt: typeof (value as { exportedAt?: unknown }).exportedAt === 'string' ? (value as { exportedAt: string }).exportedAt : nowIso(), documents, cards, annotations, events, settings };
+}
+
+// 用备份数据整体替换当前库（先清空再按外键顺序写入），并保留备份中的行为事件。
+// 头图统一清空：备份里的本机文件路径指向导出设备，恢复后让卡片重新解析。
+export async function restoreBackupData(payload: BackupPayload): Promise<{ documents: number; cards: number }> {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (txn) => {
+    await txn.execAsync('DELETE FROM events; DELETE FROM annotations; DELETE FROM cards; DELETE FROM documents; DELETE FROM settings;');
+    for (const doc of payload.documents) {
+      await txn.runAsync(
+        'INSERT INTO documents(id, title, fileName, fileUri, storedPath, content, importedAt, cardCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        doc.id, doc.title, doc.fileName, doc.fileUri, doc.storedPath, doc.content, doc.importedAt, doc.cardCount,
+      );
+    }
+    for (const card of payload.cards) {
+      await txn.runAsync(
+        `INSERT INTO cards(id, documentId, h1, h2, h3, title, content, sortOrder, createdAt, isGot, isFavorite, getCount, lastGotAt, headerImageUrl, mastery, nextReviewAt, reviewStage, forgetCount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        card.id, card.documentId, card.h1, card.h2, card.h3, card.title, card.content, card.sortOrder, card.createdAt,
+        card.isGot, card.isFavorite, card.getCount, card.lastGotAt, card.headerImageUrl, card.mastery, card.nextReviewAt, card.reviewStage, card.forgetCount,
+      );
+    }
+    for (const item of payload.annotations) {
+      await txn.runAsync('INSERT INTO annotations(id, cardId, note, updatedAt) VALUES (?, ?, ?, ?)', item.id, item.cardId, item.note, item.updatedAt);
+    }
+    for (const item of payload.events) {
+      await txn.runAsync('INSERT INTO events(id, cardId, type, createdAt) VALUES (?, ?, ?, ?)', item.id, item.cardId, item.type, item.createdAt);
+    }
+    for (const item of payload.settings) {
+      await txn.runAsync('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', item.key, item.value);
+    }
+    await txn.execAsync('UPDATE cards SET headerImageUrl = NULL;');
+  });
+  return { documents: payload.documents.length, cards: payload.cards.length };
 }

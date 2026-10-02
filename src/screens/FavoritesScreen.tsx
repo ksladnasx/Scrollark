@@ -76,7 +76,7 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 18, paddingBottom: 120, gap: 14 },
+  wrap: { padding: 18, paddingBottom: 140, gap: 14 },
   header: { gap: 7 },
   eyebrow: { color: palette.inkMuted, textTransform: 'uppercase', fontWeight: '900', letterSpacing: 1.2, fontSize: 12 },
   title: { color: palette.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1.2 },

@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Modal, Pressable, StyleSheet } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/tokens';
+import { formatNextReview, cardReviewStatus } from '../utils/review';
 import { KnowledgeCard } from './KnowledgeCard';
 
 type Props = {
@@ -22,16 +23,24 @@ type Props = {
 
 export function CardDetailModal({ card, settings, onClose, onEditAnnotation, onShare }: Props) {
   const theme = useAppTheme();
+  const status = card ? cardReviewStatus(card) : null;
   return (
     <Modal visible={Boolean(card)} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={[styles.wrap, { backgroundColor: theme.card }]} edges={['top', 'bottom']}>
-        {card ? (
+        {card && status ? (
           <KnowledgeCard
             card={card}
             settings={settings}
             onClose={onClose}
             titleInHeader
             onEditAnnotation={onEditAnnotation ? () => onEditAnnotation(card) : undefined}
+            footer={
+              <View style={styles.statusFooter}>
+                <View style={[styles.statusDot, { backgroundColor: status.color }]} />
+                <Text style={[styles.statusText, { color: theme.inkMuted }]}>复习状态 · {status.label}</Text>
+                <Text style={[styles.statusText, { color: theme.inkMuted }]}>下次复习 {formatNextReview(card.nextReviewAt)}</Text>
+              </View>
+            }
           />
         ) : null}
         {card ? (
@@ -57,6 +66,9 @@ export function CardDetailModal({ card, settings, onClose, onEditAnnotation, onS
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#FFFFFF' },
+  statusFooter: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, paddingVertical: 12 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  statusText: { fontSize: 12, fontWeight: '700' },
   cornerButton: {
     position: 'absolute',
     top: 14,

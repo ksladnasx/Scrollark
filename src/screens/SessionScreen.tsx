@@ -6,7 +6,7 @@ import { AnnotationEditor } from '../components/AnnotationEditor';
 import { AppButton } from '../components/AppButton';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { ShareCardOverlay } from '../components/ShareCardOverlay';
-import { buildSessionCards, importMarkdownDocument, markGot, toggleFavorite } from '../data/repository';
+import { buildSessionCards, importMarkdownDocument, markCardGot, toggleFavorite, unmarkGot } from '../data/repository';
 import type { CardRecord, SessionSummary, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
@@ -16,6 +16,8 @@ type Props = {
   onClose: () => void;
   onChanged: () => void;
   onEnd: (summary: SessionSummary) => void;
+  // 空态（没有未读新卡）时引导用户去复习已 get 的卡片。
+  onStartReview: () => void;
 };
 
 type EndPage = { type: 'end'; id: 'end' };
@@ -65,7 +67,7 @@ function HeartPop({ pop, topOffset, onDone }: { pop: HeartPopItem; topOffset: nu
   );
 }
 
-export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
+export function SessionScreen({ settings, onClose, onChanged, onEnd, onStartReview }: Props) {
   const theme = useAppTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -121,6 +123,8 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
       got: gotActions.size,
       favorites: favoriteActions.size,
       annotations: annotationActions.size,
+      reviews: 0,
+      ratings: { forgot: 0, fuzzy: 0, clear: 0 },
     });
   }, [annotationActions.size, cards.length, favoriteActions.size, gotActions.size, onEnd]);
 
@@ -129,12 +133,19 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
     setAnnotationCard((prev) => (prev?.id === cardId ? { ...prev, ...patch } : prev));
   }, []);
 
+  // get：标记已学并安排明天的第一次复习（评级在复习流程中进行）；再次点击取消 get。
   const handleGet = React.useCallback(async (card: CardRecord) => {
-    const nextGot = card.isGot ? 0 : 1;
-    await markGot(card.id, Boolean(nextGot));
-    updateLocalCard(card.id, { isGot: nextGot, getCount: card.getCount + (nextGot ? 1 : 0), lastGotAt: nextGot ? new Date().toISOString() : card.lastGotAt });
-    if (nextGot) gotActions.add(card.id);
-    else gotActions.delete(card.id);
+    if (card.isGot) {
+      await unmarkGot(card.id);
+      updateLocalCard(card.id, { isGot: 0 });
+      gotActions.delete(card.id);
+    } else {
+      const nextReview = new Date();
+      nextReview.setDate(nextReview.getDate() + 1);
+      await markCardGot(card.id);
+      updateLocalCard(card.id, { isGot: 1, getCount: card.getCount + 1, lastGotAt: new Date().toISOString(), nextReviewAt: nextReview.toISOString() });
+      gotActions.add(card.id);
+    }
     onChanged();
   }, [gotActions, onChanged, updateLocalCard]);
 
@@ -269,27 +280,27 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
     scheduleSnapBack(offsetY);
   }, [scheduleSnapBack, settleToPage]);
 
-  const renderFooter = React.useCallback((card: CardRecord) => (
-    <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8), backgroundColor: theme.card }] }>
-      
-      
-      <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, card.isGot ? [styles.getButtonActive, { backgroundColor: theme.ink, borderColor: theme.ink }] : null, pressed && styles.pressed]}>
-        <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? theme.paper : theme.ink} />
-        <Text style={[styles.getText, card.isGot ? styles.getTextActive : null, { color: card.isGot ? theme.paper : theme.ink }]}>{card.isGot ? '已 get' : 'get'}</Text>
-      </Pressable><Pressable onPress={() => handleFavorite(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? theme.red : theme.ink} />
-        <Text style={[styles.actionText, { color: theme.inkMuted }]}>收藏</Text>
-      </Pressable>
-      <Pressable onPress={() => openAnnotation(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? theme.red : theme.ink} />
-        <Text style={[styles.actionText, { color: theme.inkMuted }]}>批注</Text>
-      </Pressable>
-      <Pressable onPress={() => setSharingCard(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
-        <Ionicons name="share-social-outline" size={23} color={theme.ink} />
-        <Text style={[styles.actionText, { color: theme.inkMuted }]}>分享</Text>
-      </Pressable>
-    </View>
-  ), [handleFavorite, handleGet, insets.bottom, openAnnotation, theme]);
+  const renderFooter = React.useCallback((card: CardRecord) => {
+    return (
+      <View style={[styles.bottomActions, { height: 62 + Math.max(insets.bottom, 8), paddingBottom: Math.max(insets.bottom, 8), backgroundColor: theme.card }] }>
+        <Pressable onPress={() => handleGet(card)} style={({ pressed }) => [styles.getButton, { backgroundColor: theme.paperSoft, borderColor: theme.line }, card.isGot ? [styles.getButtonActive, { backgroundColor: theme.ink, borderColor: theme.ink }] : null, pressed && styles.pressed]}>
+          <Ionicons name={card.isGot ? 'checkmark-circle' : 'add-circle-outline'} size={26} color={card.isGot ? theme.paper : theme.ink} />
+          <Text style={[styles.getText, card.isGot ? styles.getTextActive : null, { color: card.isGot ? theme.paper : theme.ink }]}>{card.isGot ? '已 get' : 'get'}</Text>
+        </Pressable><Pressable onPress={() => handleFavorite(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
+          <Ionicons name={card.isFavorite ? 'heart' : 'heart-outline'} size={25} color={card.isFavorite ? theme.red : theme.ink} />
+          <Text style={[styles.actionText, { color: theme.inkMuted }]}>收藏</Text>
+        </Pressable>
+        <Pressable onPress={() => openAnnotation(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
+          <Ionicons name={card.annotation ? 'chatbubble' : 'chatbubble-outline'} size={23} color={card.annotation ? theme.red : theme.ink} />
+          <Text style={[styles.actionText, { color: theme.inkMuted }]}>批注</Text>
+        </Pressable>
+        <Pressable onPress={() => setSharingCard(card)} style={({ pressed }) => [styles.actionItem, pressed && styles.pressed]}>
+          <Ionicons name="share-social-outline" size={23} color={theme.ink} />
+          <Text style={[styles.actionText, { color: theme.inkMuted }]}>分享</Text>
+        </Pressable>
+      </View>
+    );
+  }, [handleFavorite, handleGet, insets.bottom, openAnnotation, theme]);
 
   const renderItem = React.useCallback(({ item }: { item: SessionItem }) => {
     if (isEndPage(item)) {
@@ -328,9 +339,10 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd }: Props) {
           <Ionicons name="chevron-back" size={24} color={theme.ink} />
         </Pressable>
         <View style={[styles.emptyCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
-          <Text style={[styles.emptyTitle, { color: theme.ink }]}>还没有可读卡片</Text>
-          <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>先导入一个 Markdown 文档。每个三级标题会生成一张知识卡片。</Text>
+          <Text style={[styles.emptyTitle, { color: theme.ink }]}>没有待 GET 的新卡</Text>
+          <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>导入新的 Markdown 文档继续获取知识，或者去复习已 get 的卡片。</Text>
           <AppButton label="导入 Markdown" icon="document-attach-outline" onPress={importFirst} />
+          <AppButton label="去复习" icon="repeat" variant="light" onPress={onStartReview} />
           {message ? <Text style={styles.message}>{message}</Text> : null}
         </View>
       </SafeAreaView>

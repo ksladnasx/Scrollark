@@ -15,6 +15,13 @@ export const palette = {
   darkSoft: '#201F1A',
 };
 
+// get 自评等级配色：1 = 忘了，2 = 模糊，3 = 秒懂。明暗主题下均可读。
+export const masteryColors: Record<number, string> = {
+  1: '#C0564A',
+  2: '#C98F2D',
+  3: '#63805B',
+};
+
 export const lightTheme = {
   dark: false,
   ink: palette.ink,

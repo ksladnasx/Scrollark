@@ -8,6 +8,7 @@ import { searchCards } from '../data/repository';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/tokens';
+import { cardReviewStatus } from '../utils/review';
 
 type Props = { settings: Settings; onBack: () => void; onShare?: (card: CardRecord) => void };
 
@@ -89,7 +90,7 @@ export function SearchScreen({ settings, onBack, onShare }: Props) {
             value={query}
             onChangeText={setQuery}
             autoFocus
-            placeholder="搜索标题、内容或批注"
+            placeholder="搜索卡片、批注或来源"
             placeholderTextColor={theme.inkMuted}
             style={[styles.searchInput, { color: theme.ink, fontFamily }]}
             returnKeyType="search"
@@ -107,7 +108,7 @@ export function SearchScreen({ settings, onBack, onShare }: Props) {
           {searching ? '正在搜索…' : searched ? `${results.length} 张卡片` : ''}
         </Text>
       ) : (
-        <Text style={[styles.resultMeta, { color: theme.inkMuted, fontFamily }]}>输入关键字，在全部卡片的标题、正文与批注中查找。</Text>
+        <Text style={[styles.resultMeta, { color: theme.inkMuted, fontFamily }]}>输入关键字，在全部卡片的标题、正文、批注与来源文档中查找。</Text>
       )}
 
       <FlatList
@@ -126,34 +127,41 @@ export function SearchScreen({ settings, onBack, onShare }: Props) {
             </View>
           ) : null
         }
-        renderItem={({ item }) => (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setSelectedCardId(item.id)}
-            style={({ pressed }) => [styles.resultCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
-          >
-            <Text numberOfLines={1} style={[styles.resultTitle, { color: theme.ink, fontFamily }]}>{item.title}</Text>
-            <Text numberOfLines={2} style={[styles.resultSnippet, { color: theme.inkMuted, fontFamily }]}>{snippetOf(item)}</Text>
-            <View style={styles.resultMetaRow}>
-              <Ionicons name="document-text-outline" size={12} color={theme.inkMuted} />
-              <Text numberOfLines={1} style={[styles.resultDoc, { color: theme.inkMuted, fontFamily }]}>
-                {[item.documentTitle, item.h2].filter(Boolean).join(' · ')}
-              </Text>
-              {item.annotation ? (
+        renderItem={({ item }) => {
+          const status = cardReviewStatus(item);
+          return (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSelectedCardId(item.id)}
+              style={({ pressed }) => [styles.resultCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+            >
+              <Text numberOfLines={1} style={[styles.resultTitle, { color: theme.ink, fontFamily }]}>{item.title}</Text>
+              <Text numberOfLines={2} style={[styles.resultSnippet, { color: theme.inkMuted, fontFamily }]}>{snippetOf(item)}</Text>
+              <View style={styles.resultMetaRow}>
+                <Ionicons name="document-text-outline" size={12} color={theme.inkMuted} />
+                <Text numberOfLines={1} style={[styles.resultDoc, { color: theme.inkMuted, fontFamily }]}>
+                  {[item.documentTitle, item.h2].filter(Boolean).join(' · ')}
+                </Text>
                 <View style={[styles.resultBadge, { backgroundColor: theme.paperSoft }]}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.inkMuted} />
-                  <Text style={[styles.resultBadgeText, { color: theme.inkMuted }]}>批注</Text>
+                  <View style={[styles.statusDot, { backgroundColor: status.color }]} />
+                  <Text style={[styles.resultBadgeText, { color: theme.inkMuted }]}>{status.label}</Text>
                 </View>
-              ) : null}
-              {item.isFavorite ? (
-                <View style={[styles.resultBadge, { backgroundColor: theme.paperSoft }]}>
-                  <Ionicons name="heart" size={11} color={theme.red} />
-                  <Text style={[styles.resultBadgeText, { color: theme.inkMuted }]}>收藏</Text>
-                </View>
-              ) : null}
-            </View>
-          </Pressable>
-        )}
+                {item.annotation ? (
+                  <View style={[styles.resultBadge, { backgroundColor: theme.paperSoft }]}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={11} color={theme.inkMuted} />
+                    <Text style={[styles.resultBadgeText, { color: theme.inkMuted }]}>批注</Text>
+                  </View>
+                ) : null}
+                {item.isFavorite ? (
+                  <View style={[styles.resultBadge, { backgroundColor: theme.paperSoft }]}>
+                    <Ionicons name="heart" size={11} color={theme.red} />
+                    <Text style={[styles.resultBadgeText, { color: theme.inkMuted }]}>收藏</Text>
+                  </View>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        }}
       />
 
       {editingCard ? (
@@ -187,6 +195,7 @@ const styles = StyleSheet.create({
   resultDoc: { flex: 1, fontSize: 11, fontWeight: '600' },
   resultBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: radius.pill },
   resultBadgeText: { fontSize: 10, fontWeight: '800' },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
   emptyBox: { marginTop: 20, borderRadius: radius.lg, borderWidth: 1, padding: 22, alignItems: 'center', gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '900' },
   emptyBody: { fontSize: 13, textAlign: 'center', lineHeight: 20 },

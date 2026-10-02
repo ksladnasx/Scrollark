@@ -4,7 +4,16 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { AppButton } from '../components/AppButton';
 import { clearResolvedCardImages, pruneUnreferencedCardImages } from '../components/CardHeaderImage';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URLS, imageSourceLabel } from '../config/imageUrls';
-import { clearCardHeaderImageUrls, getReferencedCardImageUrls, resetAllData, updateSetting } from '../data/repository';
+import {
+  clearCardHeaderImageUrls,
+  exportBackupData,
+  getReferencedCardImageUrls,
+  readBackupFile,
+  resetAllData,
+  restoreBackupData,
+  updateSetting,
+  type BackupPayload,
+} from '../data/repository';
 import type { Settings } from '../domain/types';
 import { fontOptions } from '../theme/fonts';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -24,6 +33,8 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
   const [homeSourceOpen, setHomeSourceOpen] = React.useState(false);
   const [cardSourceOpen, setCardSourceOpen] = React.useState(false);
   const [fontOpen, setFontOpen] = React.useState(false);
+  const [backupBusy, setBackupBusy] = React.useState(false);
+  const [backupStatus, setBackupStatus] = React.useState<Status>(null);
   // 只有远程壁纸模式才涉及壁纸源：其它模式下不显示、也不允许切源。
   const cardRemote = settings.cardHeaderImageMode === 'remote';
   const activeFont = fontOptions.find((font) => font.key === settings.fontFamily);
@@ -132,6 +143,68 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
       { text: '取消', style: 'cancel' },
       { text: '清空', style: 'destructive', onPress: async () => { await resetAllData(); onReset(); } },
     ]);
+  };
+
+  // 导出：选目录 → 全量数据写成带日期的 JSON 文件。
+  const handleExportBackup = async () => {
+    if (backupBusy) return;
+    try {
+      setBackupBusy(true);
+      setBackupStatus({ kind: 'busy', text: '正在导出数据……' });
+      const uri = await exportBackupData();
+      if (!uri) {
+        setBackupStatus(null);
+        return;
+      }
+      setBackupStatus({ kind: 'ok', text: `已导出到 ${uri.replace(/^file:\/\//, '')}` });
+    } catch (error) {
+      setBackupStatus({ kind: 'error', text: error instanceof Error ? error.message : '导出失败，请稍后再试' });
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  // 导入：选文件并校验 → 二次确认（整体替换）→ 恢复 → 清理头图缓存并刷新。
+  const handleImportBackup = async () => {
+    if (backupBusy) return;
+    let payload: BackupPayload;
+    try {
+      setBackupStatus(null);
+      setBackupBusy(true);
+      payload = await readBackupFile();
+    } catch (error) {
+      setBackupStatus({ kind: 'error', text: error instanceof Error ? error.message : '导入失败，请稍后再试' });
+      setBackupBusy(false);
+      return;
+    }
+    const stamped = new Date(payload.exportedAt);
+    const when = Number.isNaN(stamped.getTime()) ? '' : `（导出于 ${stamped.toISOString().slice(0, 10)}）`;
+    setBackupBusy(false);
+    Alert.alert(
+      '导入备份',
+      `备份包含 ${payload.documents.length} 份文档、${payload.cards.length} 张卡片${when}。导入会用备份整体替换当前数据，此操作不可恢复。`,
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '导入', style: 'destructive', onPress: () => { void applyImportBackup(payload); } },
+      ],
+    );
+  };
+
+  const applyImportBackup = async (payload: BackupPayload) => {
+    try {
+      setBackupBusy(true);
+      setBackupStatus({ kind: 'busy', text: '正在导入备份……' });
+      const result = await restoreBackupData(payload);
+      // 备份里的本机头图指向导出设备，恢复后统一重新解析：清内存缓存与磁盘孤儿文件。
+      clearResolvedCardImages();
+      await pruneUnreferencedCardImages(new Set());
+      setBackupStatus({ kind: 'ok', text: `已导入 ${result.documents} 份文档、${result.cards} 张卡片。` });
+      onDataChanged?.();
+    } catch (error) {
+      setBackupStatus({ kind: 'error', text: error instanceof Error ? error.message : '导入失败，请稍后再试' });
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
   const homeOptions: SourceOption[] = HOME_BACKGROUND_IMAGE_URLS.map((url) => ({ url, label: imageSourceLabel(url) }));
@@ -313,6 +386,21 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
         </Rows>
       </Section>
 
+      <Section icon="archive-outline" title="数据备份" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <View style={styles.actionRow}>
+            <AppButton label="导出全部数据（JSON）" icon="download-outline" variant="dark" loading={backupBusy} onPress={() => { void handleExportBackup(); }} />
+          </View>
+          <View style={styles.actionRow}>
+            <AppButton label="从备份文件导入" icon="duplicate-outline" variant="light" loading={backupBusy} onPress={() => { void handleImportBackup(); }} />
+          </View>
+          <Text style={[styles.backupHint, { color: theme.inkMuted, fontFamily }]}>
+            导出内容包含文档、卡片、评级、收藏、批注、行为事件与设置，可作为换机备份。导入会用备份整体替换当前数据，请谨慎操作。
+          </Text>
+        </Rows>
+        {backupStatus ? <StatusLine status={backupStatus} theme={theme} fontFamily={fontFamily} /> : null}
+      </Section>
+
       <Pressable
         accessibilityRole="button"
         onPress={confirmReset}
@@ -437,7 +525,7 @@ function StatusLine({ status, theme, fontFamily }: { status: NonNullable<Status>
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 16, paddingBottom: 40, gap: 24 },
+  wrap: { padding: 16, paddingBottom: 140, gap: 24 },
   section: { gap: 10 },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -464,6 +552,7 @@ const styles = StyleSheet.create({
   pathHint: { fontSize: 11, lineHeight: 16, paddingHorizontal: 16, paddingBottom: 12, marginTop: -4 },
   statusWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
   statusText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  backupHint: { fontSize: 12, lineHeight: 18, fontWeight: '600', paddingHorizontal: 16, paddingBottom: 14 },
   dangerButton: { minHeight: 48, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   dangerText: { fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.7 },

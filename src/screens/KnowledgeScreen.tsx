@@ -279,7 +279,7 @@ export function Empty({ title, body }: { title: string; body: string }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 18, paddingBottom: 120, gap: 14 },
+  wrap: { padding: 18, paddingBottom: 140, gap: 14 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 6 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
   noticeText: { flex: 1, fontSize: 12, fontWeight: '600' },

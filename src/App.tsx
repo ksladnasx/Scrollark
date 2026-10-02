@@ -8,19 +8,22 @@ import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL } from './config/imag
 import { FavoritesScreen } from './screens/FavoritesScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { KnowledgeScreen } from './screens/KnowledgeScreen';
+import { ReviewHubScreen } from './screens/ReviewHubScreen';
+import { ReviewScreen } from './screens/ReviewScreen';
 import { SessionEndScreen } from './screens/SessionEndScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
+import { TabBar } from './components/TabBar';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
 import { appFonts } from './theme/fonts';
 import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import { palette, radius } from './theme/tokens';
 
-const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, goal: 10, streakDays: 0, week: [], documents: 0 };
+const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, todayReviews: 0, goal: 10, streakDays: 0, week: [], documents: 0, dueCount: 0, recentCount: 0, strengtheningCount: 0, masteredCount: 0, weakCount: 0, dueWeakCount: 0, tomorrowCount: 0 };
 const initialSettings: Settings = {
   sessionCardCount: 10,
   fontSize: 18,
@@ -37,9 +40,10 @@ const initialSettings: Settings = {
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
   home: { title: '首页', subtitle: 'Scrollark', icon: 'home-outline' },
+  review: { title: '复习', subtitle: 'Spaced Review', icon: 'repeat-outline' },
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
-  stats: { title: '今日签', subtitle: '阅读统计', icon: 'bar-chart-outline' },
+  stats: { title: '学习', subtitle: 'Learning Progress', icon: 'school-outline' },
   settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },
 };
 
@@ -177,6 +181,25 @@ export default function App() {
             onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
             onChanged={refreshSoon}
             onEnd={(summary) => { void refresh(); setRoute({ name: 'sessionEnd', summary }); }}
+            onStartReview={() => setRoute({ name: 'review' })}
+          />
+        </SafeAreaProvider>
+      </ThemeProvider>
+    );
+  }
+
+  if (route.name === 'review') {
+    return (
+      <ThemeProvider settings={settings}>
+        <SafeAreaProvider>
+          <StatusBar style={theme.dark ? 'light' : 'dark'} />
+          <ReviewScreen
+            mode={route.mode}
+            settings={settings}
+            tomorrowCount={stats.tomorrowCount}
+            onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
+            onChanged={refreshSoon}
+            onStartSession={() => setRoute({ name: 'session' })}
           />
         </SafeAreaProvider>
       </ThemeProvider>
@@ -192,6 +215,7 @@ export default function App() {
             summary={route.summary}
             onHome={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
             onContinue={() => setRoute({ name: 'session' })}
+            onStartReview={() => setRoute({ name: 'review' })}
           />
         </SafeAreaProvider>
       </ThemeProvider>
@@ -204,22 +228,25 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar style={activeTab === 'home' || theme.dark ? 'light' : 'dark'} />
         <View style={[styles.app, { backgroundColor: theme.paper }] }>
-          {activeTab === 'home' ? (
-            <HomeScreen
-              stats={stats}
-              settings={settings}
-              onStartSession={() => setRoute({ name: 'session' })}
-              onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
-              onSearch={() => setRoute({ name: 'search' })}
-            />
-          ) : (
-            <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
-              <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
-              <View style={styles.pageBody}>
-                {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings, onShare: setSharingCard })}
-              </View>
-            </SafeAreaView>
-          )}
+          <View style={styles.appBody}>
+            {activeTab === 'home' ? (
+              <HomeScreen
+                stats={stats}
+                settings={settings}
+                onStartSession={() => setRoute({ name: 'session' })}
+                onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
+                onSearch={() => setRoute({ name: 'search' })}
+              />
+            ) : (
+              <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
+                <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
+                <View style={styles.pageBody}>
+                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings, onShare: setSharingCard })}
+                </View>
+              </SafeAreaView>
+            )}
+          </View>
+          <TabBar active={activeTab} onChange={(tab) => setRoute({ name: 'tabs', tab })} />
           {sharingCard ? (
             <ShareCardOverlay
               key={sharingCard.id}
@@ -268,6 +295,16 @@ function renderPage(
   },
 ) {
   switch (tab) {
+    case 'review':
+      return (
+        <ReviewHubScreen
+          stats={data.stats}
+          settings={data.settings}
+          onStartReview={() => data.setRoute({ name: 'review' })}
+          onStartAheadReview={() => data.setRoute({ name: 'review', mode: 'ahead' })}
+          onStartGet={() => data.setRoute({ name: 'session' })}
+        />
+      );
     case 'knowledge':
       return (
         <KnowledgeScreen
@@ -282,7 +319,7 @@ function renderPage(
     case 'favorites':
       return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
-      return <StatisticsScreen stats={data.stats} />;
+      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.setRoute({ name: 'tabs', tab: 'favorites' })} />;
     case 'settings':
       return (
         <SettingsScreen
@@ -305,6 +342,7 @@ function setImmediateSettings(setSettings: React.Dispatch<React.SetStateAction<S
 
 const styles = StyleSheet.create({
   app: { flex: 1, backgroundColor: palette.paper },
+  appBody: { flex: 1 },
   page: { flex: 1, backgroundColor: palette.paper },
   pageBody: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: palette.paper },

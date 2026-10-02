@@ -1,13 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
-import { Alert, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
-import type { Settings, Statistics, TabKey } from '../domain/types';
+import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
 import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
+import { getRecommendedCards } from '../data/repository';
 import { HomeShareOverlay } from '../components/HomeShareOverlay';
+import { KnowledgeCard } from '../components/KnowledgeCard';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette, radius, shadow, type AppTheme } from '../theme/tokens';
+import { radius, type AppTheme } from '../theme/tokens';
 
 type Props = {
   stats: Statistics;
@@ -16,13 +19,6 @@ type Props = {
   onNavigate: (tab: TabKey) => void;
   onSearch: () => void;
 };
-
-const menu: { id: string; label: string; icon: keyof typeof Ionicons.glyphMap; tab: TabKey }[] = [
-  { id: 'stats', label: '统计', icon: 'bar-chart-outline', tab: 'stats' },
-  { id: 'library', label: '知识库', icon: 'library-outline', tab: 'knowledge' },
-  { id: 'favorites', label: '收藏', icon: 'heart-outline', tab: 'favorites' },
-  { id: 'settings', label: '设置', icon: 'settings-outline', tab: 'settings' },
-];
 
 const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const heroImageKeys = Object.keys(heroImages);
@@ -34,15 +30,19 @@ function pickLocalHomeImage(): ImageSourcePropType {
 
 export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSearch }: Props) {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   // 毛玻璃的模糊目标：整个首页背景（壁纸 + 蒙版）。
   const backgroundRef = React.useRef<View | null>(null);
   const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
-  // 初始化时同步读本地缓存的壁纸，跨天下载新图期间也先显示旧图，避免闪变。
   const [homeImageUri, setHomeImageUri] = React.useState<string | null>(() => getCachedHomeBackgroundImageUri());
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
-  // 首页数据分享海报（壁纸为背景的统计图片）。
   const [sharingHome, setSharingHome] = React.useState(false);
+  // 「今天推荐」：几张未读新卡，让内容成为 GET 的入口。
+  const [recommendedCards, setRecommendedCards] = React.useState<CardRecord[]>([]);
+  // 推荐卡宽度：留出 76px 露出下一张卡的边缘，形成可横滑的暗示。
+  const recommendCardWidth = Math.min(width - 92, 300);
 
   React.useEffect(() => {
     let alive = true;
@@ -63,6 +63,21 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
       alive = false;
     };
   }, [fallbackHomeImage, settings.homeBackgroundImageUrl]);
+
+  // 随着卡片被 GET / 导入，推荐位自动换下一批。
+  React.useEffect(() => {
+    let alive = true;
+    getRecommendedCards(3)
+      .then((cards) => {
+        if (alive) setRecommendedCards(cards);
+      })
+      .catch(() => {
+        if (alive) setRecommendedCards([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [stats.gotCards, stats.totalCards]);
 
   const downloadBackground = React.useCallback(async () => {
     if (downloadBusy) return;
@@ -91,159 +106,247 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
     const week = weekDays[date.getDay()];
     return {
       day: String(date.getDate()).padStart(2, '0'),
-      meta: `${week} · ${date.getFullYear()}年${date.getMonth() + 1}月`,
+      week,
+      month: `${date.getFullYear()}年${date.getMonth() + 1}月`,
     };
   }, []);
 
-  const goalProgress = stats.goal > 0 ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
-  const goalReached = stats.goal > 0 && stats.todayGets >= stats.goal;
+  const goalOn = stats.goal > 0;
+  const goalProgress = goalOn ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
+  const goalReached = goalOn && stats.todayGets >= stats.goal;
 
   return (
     <BlurTargetView ref={backgroundRef} style={styles.screen}>
       <ImageBackground source={homeImage} resizeMode="cover" style={styles.screenInner} imageStyle={styles.backgroundImage}>
-      <Pressable style={styles.backgroundPressArea} delayLongPress={600} onLongPress={confirmDownloadBackground}>
         <View style={styles.scrim} />
-      </Pressable>
+        {/* 壁纸长按下载手势区：只覆盖不滚动的顶部区域，不与下方滚动内容抢手势 */}
+        <Pressable style={styles.wallpaperPressArea} delayLongPress={600} onLongPress={confirmDownloadBackground} />
 
-      <View style={styles.topArea} pointerEvents="box-none">
-        <View style={styles.topMenu}>
-          {menu.map((item) => (
-            <Pressable key={`home-menu-${item.id}`} onPress={() => onNavigate(item.tab)} style={({ pressed }) => [styles.menuItem, pressed && styles.pressed]}>
-              <Ionicons name={item.icon} size={18} color="#FFFFFF" />
-              <Text style={styles.menuText}>{item.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.dateCard}>
-          <View>
-            <View ><Text style={styles.dateNumber}>{today.day}</Text></View>
-            <Text style={styles.dateMeta}>{today.meta}</Text>
+        {/* 固定头部：品牌 + 日期 + 快捷图标 + 搜索 */}
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 36) + 8 }]}>
+          <View style={styles.headerRow}>
+            <View style={styles.dateBlock}>
+              <Text style={styles.brand}>Scrollark</Text>
+              <View style={styles.dateRow}>
+                <Text style={styles.dateNumber}>{today.day}</Text>
+                <View style={styles.dateMetaWrap}>
+                  <Text style={styles.dateWeek}>{today.week}</Text>
+                  <Text style={styles.dateMonth}>{today.month}</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="分享首页数据"
+                onPress={() => setSharingHome(true)}
+                style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="设置"
+                onPress={() => onNavigate('settings')}
+                style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
+              >
+                <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
+              </Pressable>
+            </View>
           </View>
-          <Pressable onPress={() => onNavigate('stats')} style={({ pressed }) => [styles.signButton, pressed && styles.pressed]}>
-            <Text style={styles.signText}>查看统计</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="搜索知识卡片"
+            onPress={onSearch}
+            style={({ pressed }) => [styles.searchPill, pressed && styles.pressed]}
+          >
+            <Ionicons name="search" size={17} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.searchPillText}>搜索你的知识卡片</Text>
           </Pressable>
         </View>
-      </View>
 
-      <View style={styles.bottomArea}>
-        {/* 毛玻璃面板：blurTarget 指向整个首页背景（壁纸 + 蒙版）+ 半透明纸色叠加 */}
-        <BlurView
-          intensity={theme.dark ? 45 : 60}
-          tint={theme.dark ? 'dark' : 'light'}
-          blurMethod="dimezisBlurViewSdk31Plus"
-          blurTarget={backgroundRef}
-          style={styles.panelBlur}
-        >
-          <View style={[styles.panelInner, { backgroundColor: theme.dark ? 'rgba(20,19,16,0.55)' : 'rgba(255,255,255,0.24)' }]}>
-            <View style={styles.continueRow}>
-              <View style={styles.continueBox}>
-                <Pressable onPress={onStartSession} style={({ pressed }) => [styles.continueButton, pressed && styles.pressed]}>
-                  <Text style={[styles.continueText, { fontFamily: settings.fontFamily }]}>{goalReached ? '继续阅读' : '继续打卡'}</Text>
-                </Pressable>
-              </View>
-            <Pressable onPress={onSearch} style={({ pressed }) => [styles.libraryBox, pressed && styles.pressed]}>
-              <Ionicons name="search-outline" size={30} color={theme.ink} />
-              <Text style={[styles.libraryText, { color: theme.ink }]}>搜索</Text>
-            </Pressable>
-          </View>
-
-          {stats.goal > 0 ? (
-            <View style={styles.goalRow}>
-              <View style={styles.goalHead}>
-                <Text style={[styles.goalLabel, { color: theme.inkMuted }]}>今日目标 · {stats.todayGets}/{stats.goal}</Text>
+        {/* 滚动内容：今日学习 → 复习提醒 → 今天推荐 → 学习进度 */}
+        <ScrollView style={styles.content} contentContainerStyle={[styles.contentInner, { paddingBottom: 150 }]} showsVerticalScrollIndicator={false}>
+          <FrostPanel backgroundRef={backgroundRef} theme={theme}>
+            <View style={styles.todayPanel}>
+              <View style={styles.todayHead}>
+                <Text style={[styles.panelLabel, { color: theme.inkMuted }]}>今日学习</Text>
                 {goalReached ? (
                   <View style={styles.goalBadge}>
-                    <Ionicons name="checkmark-circle" size={13} color="#5D4218" />
+                    <Ionicons name="checkmark-circle" size={12} color="#5D4218" />
                     <Text style={styles.goalBadgeText}>已打卡</Text>
                   </View>
-                ) : (
-                  <Text style={[styles.goalStatus, { color: theme.inkMuted }]}>再 get {stats.goal - stats.todayGets} 张</Text>
-                )}
+                ) : null}
               </View>
-              <View style={[styles.goalTrack, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.12)' : 'rgba(23,22,17,0.08)' }]}>
-                <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
+              <View style={styles.todayValueRow}>
+                <Text style={[styles.todayValue, { color: theme.ink }]}>{goalOn ? `${goalProgress}%` : stats.todayGets}</Text>
+                {!goalOn ? <Text style={[styles.todayUnit, { color: theme.inkMuted }]}>张已 GET</Text> : null}
               </View>
-              {goalReached ? (
-                <Text style={[styles.goalStreak, { color: theme.inkMuted }]}>今日目标已完成，已连续打卡 {stats.streakDays} 天</Text>
-              ) : null}
+              {goalOn ? (
+                <>
+                  <View style={[styles.goalTrack, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.14)' : 'rgba(23,22,17,0.08)' }]}>
+                    <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
+                  </View>
+                  <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>
+                    {goalReached ? '今日目标已完成' : `今日目标 ${stats.todayGets}/${stats.goal}`}
+                  </Text>
+                </>
+              ) : (
+                <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>可在设置中开启每日目标</Text>
+              )}
+              <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>
+                今日 GET {stats.todayGets} · 今日复习 {stats.todayReviews}
+              </Text>
             </View>
+            <View style={[styles.panelDivider, { backgroundColor: theme.line }]} />
+            <View style={styles.progressRow}>
+              <ProgressNum value={`${stats.gotCards}`} label="已 GET" theme={theme} />
+              <ProgressNum value={`${stats.masteredCount}`} label="已掌握" theme={theme} />
+              <ProgressNum value={`${stats.dueCount}`} label="待复习" theme={theme} />
+              <ProgressNum value={`${stats.streakDays}`} label="连续天数" theme={theme} />
+            </View>
+          </FrostPanel>
+
+          {stats.dueCount > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="进入复习"
+              onPress={() => onNavigate('review')}
+              style={({ pressed }) => [pressed && styles.pressed]}
+            >
+              <FrostPanel backgroundRef={backgroundRef} theme={theme}>
+                <View style={styles.reminderRow}>
+                  <View style={[styles.reminderIcon, { backgroundColor: '#405991' }]}>
+                    <Ionicons name="repeat" size={15} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.reminderTextWrap}>
+                    <Text style={[styles.reminderTitle, { color: theme.ink }]}>{stats.dueCount} 张卡片需要复习</Text>
+                    <Text style={[styles.reminderMeta, { color: theme.inkMuted }]}>
+                      {stats.dueWeakCount > 0 ? `其中 ${stats.dueWeakCount} 张已进入遗忘阶段 · ` : ''}轻触进入复习
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
+                </View>
+              </FrostPanel>
+            </Pressable>
           ) : null}
 
-          {/* 数据一览：极简数字条，点击跳转对应页面；收藏位为分享入口 */}
-          <View style={styles.statStrip}>
-            <StatTile icon="albums-outline" accessibilityLabel={`卡片 ${stats.totalCards}`} value={`${stats.totalCards}`} onPress={() => onNavigate('knowledge')} theme={theme} />
-            <StatTile icon="checkmark-circle-outline" accessibilityLabel={`已 Get ${stats.gotCards}`} value={`${stats.gotCards}`} onPress={() => onNavigate('stats')} theme={theme} />
-            <StatTile icon="share-social-outline" accessibilityLabel="分享首页数据" value="分享" onPress={() => setSharingHome(true)} theme={theme} />
-            <StatTile icon="chatbubble-ellipses-outline" accessibilityLabel={`批注 ${stats.annotatedCards}`} value={`${stats.annotatedCards}`} onPress={() => onNavigate('favorites')} theme={theme} />
-          </View>
-          </View>
-        </BlurView>
-      </View>
+          {recommendedCards.length > 0 ? (
+            <View style={styles.recommendWrap}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionLabel}>今天推荐</Text>
+                <Text style={styles.sectionMeta}>从未读卡片里挑了 {recommendedCards.length} 张 · 点击开始 GET</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={recommendCardWidth + 12}
+                style={styles.recommendCarousel}
+                contentContainerStyle={styles.recommendCarouselInner}
+              >
+                {recommendedCards.map((card) => (
+                  <Pressable
+                    key={card.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`开始 GET：${card.title}`}
+                    onPress={onStartSession}
+                    style={({ pressed }) => [{ width: recommendCardWidth }, pressed && styles.pressed]}
+                  >
+                    <KnowledgeCard compact card={card} settings={settings} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+        </ScrollView>
 
-      {sharingHome ? (
-        <HomeShareOverlay
-          imageSource={homeImage}
-          settings={settings}
-          stats={stats}
-          onDone={() => setSharingHome(false)}
-        />
-      ) : null}
-    </ImageBackground>
+        {sharingHome ? (
+          <HomeShareOverlay
+            imageSource={homeImage}
+            settings={settings}
+            stats={stats}
+            onDone={() => setSharingHome(false)}
+          />
+        ) : null}
+      </ImageBackground>
     </BlurTargetView>
   );
 }
 
-function StatTile({ icon, accessibilityLabel, value, onPress, theme }: { icon: keyof typeof Ionicons.glyphMap; accessibilityLabel: string; value: string; onPress: () => void; theme: AppTheme }) {
+// 首页毛玻璃卡片：blurTarget 指向整个壁纸背景 + 半透明纸色叠加。
+function FrostPanel({ backgroundRef, theme, children }: { backgroundRef: React.RefObject<View | null>; theme: AppTheme; children: React.ReactNode }) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [styles.statTile, pressed && styles.pressed]}
+    <BlurView
+      intensity={theme.dark ? 45 : 60}
+      tint={theme.dark ? 'dark' : 'light'}
+      blurMethod="dimezisBlurViewSdk31Plus"
+      blurTarget={backgroundRef}
+      style={styles.frostPanel}
     >
-      <Ionicons name={icon} size={33} color={theme.inkMuted} />
-      <Text style={[styles.statValue, { color: theme.ink }]}>{value}</Text>
-    </Pressable>
+      <View style={[styles.frostInner, { backgroundColor: theme.dark ? 'rgba(20,19,16,0.55)' : 'rgba(255,255,255,0.24)' }]}>{children}</View>
+    </BlurView>
+  );
+}
+
+function ProgressNum({ value, label, theme }: { value: string; label: string; theme: AppTheme }) {
+  return (
+    <View style={styles.progressNum}>
+      <Text style={[styles.progressValue, { color: theme.ink }]}>{value}</Text>
+      <Text style={[styles.progressLabel, { color: theme.inkMuted }]}>{label}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#11110F' },
-  screenInner: { flex: 1, justifyContent: 'space-between' },
+  screenInner: { flex: 1 },
   backgroundImage: { width: '100%', height: '100%' },
-  backgroundPressArea: { ...StyleSheet.absoluteFillObject },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.25)' },
-  topArea: { flex: 1, paddingTop: 44, paddingHorizontal: 16, paddingBottom: 10 },
-  topMenu: { alignSelf: 'flex-end', flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 12, backgroundColor: 'rgba(20,20,20,0.22)' },
-  menuItem: { alignItems: 'center', minWidth: 44, gap: 3 },
-  menuText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
-  dateCard: { alignSelf: 'flex-end', marginTop: 'auto', width: 164, borderRadius: 10, padding: 14, backgroundColor: 'rgba(111,105,72,0.72)', gap: 12 },
-  dateNumber: { color: '#FFFFFF', fontSize: 56, lineHeight: 60, fontWeight: '300', textAlign: 'center' },
-  dateMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 16 },
-  signButton: { height: 43, borderRadius: 7, backgroundColor: '#F2B737', alignItems: 'center', justifyContent: 'center' },
-  signText: { color: '#5D4218', fontSize: 18, fontWeight: '700' },
-  bottomArea: { paddingHorizontal: 0, paddingBottom: 0 },
-  panelBlur: { borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
-  panelInner: { minHeight: 186, paddingHorizontal: 32, paddingTop: 26, paddingBottom: 20 },
-  continueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
-  continueBox: { flex: 1, alignItems: 'center', gap: 14 },
-  continueButton: { width: '100%', maxWidth: 282, height: 62, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#405991', ...shadow.soft },
-  continueText: { color: '#FFFFFF', fontSize: 26, letterSpacing: 7, fontWeight: '400' },
-  libraryBox: { width: 64, alignItems: 'center', gap: 5 },
-  libraryText: { color: '#222222', fontSize: 16 },
-  message: { marginTop: 10, color: palette.blue, textAlign: 'center', fontSize: 13 },
-  goalRow: { marginTop: 20, gap: 8 },
-  goalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  goalLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.6 },
-  goalStatus: { fontSize: 12, fontWeight: '800' },
-  goalTrack: { height: 8, borderRadius: 4, overflow: 'hidden' },
-  goalFill: { height: 8, borderRadius: 4 },
-  goalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F2B737', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
-  goalBadgeText: { color: '#5D4218', fontSize: 12, fontWeight: '900' },
-  goalStreak: { fontSize: 12, fontWeight: '700' },
-  statStrip: { marginTop: 0, flexDirection: 'row' },
-  statTile: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 12 },
-  statValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
-  pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
+  wallpaperPressArea: { position: 'absolute', top: 0, left: 0, right: 0, height: 240 },
+  header: { paddingHorizontal: 16, gap: 14 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  dateBlock: { gap: 2 },
+  brand: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '900', letterSpacing: 2.4, textTransform: 'uppercase', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  dateRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  dateNumber: { color: '#FFFFFF', fontSize: 46, lineHeight: 52, fontWeight: '300', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 8 },
+  dateMetaWrap: { paddingBottom: 7, gap: 1 },
+  dateWeek: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  dateMonth: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headerButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,20,20,0.28)' },
+  searchPill: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, paddingHorizontal: 15, borderRadius: radius.pill, backgroundColor: 'rgba(20,20,20,0.28)' },
+  searchPillText: { color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  content: { flex: 1 },
+  contentInner: { paddingTop: 16, paddingHorizontal: 16, gap: 12 },
+  frostPanel: { borderRadius: 24, overflow: 'hidden' },
+  frostInner: { borderRadius: 24, paddingHorizontal: 20, paddingVertical: 16 },
+  todayPanel: { gap: 8 },
+  todayHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  panelLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
+  todayValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  todayValue: { fontSize: 52, lineHeight: 58, fontWeight: '900', letterSpacing: -1.6 },
+  todayUnit: { fontSize: 14, fontWeight: '800' },
+  goalTrack: { height: 7, borderRadius: 4, overflow: 'hidden' },
+  goalFill: { height: 7, borderRadius: 4 },
+  goalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F2B737', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 3 },
+  goalBadgeText: { color: '#5D4218', fontSize: 11, fontWeight: '900' },
+  todayMeta: { fontSize: 12, fontWeight: '700' },
+  panelDivider: { height: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginHorizontal: -20, marginTop: 12, marginBottom: 14 },
+  reminderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reminderIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  reminderTextWrap: { flex: 1, gap: 2 },
+  reminderTitle: { fontSize: 15, fontWeight: '900' },
+  reminderMeta: { fontSize: 12, fontWeight: '600' },
+  recommendWrap: { gap: 9 },
+  recommendCarousel: { marginLeft: -16, marginRight: -16 },
+  recommendCarouselInner: { paddingHorizontal: 16, gap: 12, paddingRight: 32 },
+  sectionHead: { paddingHorizontal: 4, gap: 2 },
+  sectionLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.4, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  sectionMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  progressRow: { flexDirection: 'row' },
+  progressNum: { flex: 1, alignItems: 'center', gap: 3 },
+  progressValue: { fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
+  progressLabel: { fontSize: 11, fontWeight: '700' },
+  pressed: { opacity: 0.75, transform: [{ scale: 0.98 }] },
 });

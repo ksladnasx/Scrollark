@@ -2,14 +2,118 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Statistics } from '../domain/types';
+import { getDailyActivity } from '../data/repository';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette, radius } from '../theme/tokens';
+import { masteryColors, palette, radius } from '../theme/tokens';
 
 // 趋势图气泡宽度与判定高度：气泡显示在点的上方，点太靠上时改到下方。
 const TOOLTIP_WIDTH = 80;
 const TOOLTIP_ABOVE_MIN_Y = 50;
 
-export function StatisticsScreen({ stats }: { stats: Statistics }) {
+// 热力图格子尺寸：13px 格子 + 3px 间距，7 行一共 109px 高。
+const CELL = 13;
+const CELL_GAP = 3;
+const WEEKDAY_LABELS = ['一', '', '三', '', '五', '', '日'];
+
+// 打卡强度映射为颜色深浅：次数越多越实。
+function activityOpacity(count: number) {
+  if (count <= 0) return 0;
+  if (count <= 2) return 0.28;
+  if (count <= 5) return 0.5;
+  if (count <= 9) return 0.72;
+  return 1;
+}
+
+function HeatmapCard() {
+  const theme = useAppTheme();
+  const [activity, setActivity] = React.useState<{ date: string; count: number }[]>([]);
+
+  React.useEffect(() => {
+    let alive = true;
+    getDailyActivity(364)
+      .then((rows) => {
+        if (alive) setActivity(rows);
+      })
+      .catch(() => {
+        // 统计失败时热力图保持为空，不影响页面其它部分。
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 周一为每周第一行：把第一天的星期对齐成首列顶部的空格。
+  const columns = React.useMemo(() => {
+    if (activity.length === 0) return [];
+    const first = new Date(`${activity[0].date}T00:00:00`);
+    const lead = Number.isNaN(first.getTime()) ? 0 : (first.getDay() + 6) % 7;
+    const cells: ({ date: string; count: number } | null)[] = [...Array.from({ length: lead }, () => null), ...activity];
+    const weeks = Math.ceil(cells.length / 7);
+    return Array.from({ length: weeks }, (_, week) => cells.slice(week * 7, week * 7 + 7));
+  }, [activity]);
+
+  const total = activity.reduce((sum, day) => sum + day.count, 0);
+  const activeDays = activity.filter((day) => day.count > 0).length;
+
+  return (
+    <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
+      <Text style={[styles.sectionTitle, { color: theme.ink }]}>近一年打卡热力图</Text>
+      {columns.length === 0 ? (
+        <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>正在统计…</Text>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.heatmapBody}>
+            <View style={styles.weekdayColumn}>
+              {WEEKDAY_LABELS.map((label, row) => (
+                <View key={`weekday-${row}`} style={[styles.weekdaySlot, { height: CELL }]}>
+                  {label ? <Text style={[styles.weekdayText, { color: theme.inkMuted }]}>{label}</Text> : null}
+                </View>
+              ))}
+            </View>
+            <View style={styles.heatmapGrid}>
+              {columns.map((column, columnIndex) => (
+                <View key={`week-${columnIndex}`} style={styles.heatmapColumn}>
+                  {column.map((day, dayIndex) => (
+                    <View
+                      key={day ? `day-${day.date}` : `empty-${columnIndex}-${dayIndex}`}
+                      style={[
+                        styles.heatmapCell,
+                        {
+                          height: CELL,
+                          width: CELL,
+                          backgroundColor: day && day.count > 0 ? theme.accent : theme.paperSoft,
+                          opacity: day && day.count > 0 ? activityOpacity(day.count) : 1,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      )}
+      <View style={styles.heatmapLegend}>
+        <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>近一年 {total} 次 · {activeDays} 天有记录</Text>
+        <View style={styles.legendScale}>
+          <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>少</Text>
+          {[0, 2, 5, 9, 12].map((count) => (
+            <View
+              key={`legend-${count}`}
+              style={[styles.heatmapCell, { height: CELL, width: CELL, backgroundColor: count > 0 ? theme.accent : theme.paperSoft, opacity: count > 0 ? activityOpacity(count) : 1 }]}
+            />
+          ))}
+          <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>多</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// 掌握程度分布的四段配色：未读为中性色，其余对应复习状态色。
+const newRecentColor = '#526B78';
+
+export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics; onOpenFavorites: () => void }) {
   const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
@@ -29,6 +133,14 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
     setChartWidth(event.nativeEvent.layout.width);
   }, []);
   const selectedPoint = selectedDay === null ? null : points.find((point) => point.day === selectedDay) ?? null;
+  // 掌握程度分布：全部卡片按复习状态分成四段（互斥、加总等于总卡片数）。
+  const unreadCount = Math.max(0, stats.totalCards - stats.gotCards);
+  const masterySegments = [
+    { label: '未读', count: unreadCount, color: theme.paperSoft },
+    { label: '新近记忆', count: stats.recentCount, color: newRecentColor },
+    { label: '巩固中', count: stats.strengtheningCount, color: masteryColors[2] },
+    { label: '已掌握', count: stats.masteredCount, color: masteryColors[3] },
+  ];
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
@@ -41,6 +153,32 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
           <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.ink }]} />
         </View>
         <Text style={[styles.progressText, { color: theme.ink }]}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
+      </View>
+
+      <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <View style={styles.goalHead}>
+          <Text style={[styles.goalTitle, { color: theme.ink }]}>掌握程度</Text>
+          {stats.dueCount > 0 ? <Text style={[styles.goalValue, { color: theme.inkMuted }]}>待复习 {stats.dueCount} 张</Text> : null}
+        </View>
+        <View style={[styles.masteryBar, { backgroundColor: theme.paperSoft }]}>
+          {masterySegments.map((segment) => (
+            segment.count > 0 ? (
+              <View key={`mastery-${segment.label}`} style={{ flex: segment.count, backgroundColor: segment.color }} />
+            ) : null
+          ))}
+        </View>
+        <View style={styles.masteryLegend}>
+          {masterySegments.map((segment) => (
+            <View key={`mastery-legend-${segment.label}`} style={styles.masteryLegendItem}>
+              <View style={[styles.masteryDot, { backgroundColor: segment.color, borderColor: theme.line }]} />
+              <Text style={[styles.masteryLegendLabel, { color: theme.inkMuted }]}>{segment.label}</Text>
+              <Text style={[styles.masteryLegendValue, { color: theme.ink }]}>{segment.count}</Text>
+            </View>
+          ))}
+        </View>
+        {stats.weakCount > 0 ? (
+          <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>有 {stats.weakCount} 张卡片忘记过，复习时会优先安排。</Text>
+        ) : null}
       </View>
 
       <View style={styles.grid}>
@@ -80,6 +218,8 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
           <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>未设置每日目标，可在 设置 → 阅读节奏 中开启。</Text>
         )}
       </View>
+
+      <HeatmapCard />
 
       <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
         <Text style={[styles.sectionTitle, { color: theme.ink }]}>最近 7 天 get 趋势</Text>
@@ -150,6 +290,23 @@ export function StatisticsScreen({ stats }: { stats: Statistics }) {
           </View>
         </View>
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="打开收藏与批注"
+        onPress={onOpenFavorites}
+        style={({ pressed }) => [styles.favRow, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+      >
+        <View style={[styles.favIcon, { backgroundColor: theme.paperSoft }]}>
+          <Ionicons name="heart-outline" size={15} color={theme.red} />
+        </View>
+        <View style={styles.favTextWrap}>
+          <Text style={[styles.favTitle, { color: theme.ink }]}>收藏与批注</Text>
+          <Text style={[styles.favMeta, { color: theme.inkMuted }]}>我标记过的重要卡片</Text>
+        </View>
+        <Text style={[styles.favCount, { color: theme.inkMuted }]}>{stats.favoriteCards}</Text>
+        <Ionicons name="chevron-forward" size={16} color={theme.inkMuted} />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -165,7 +322,7 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 18, paddingBottom: 120, gap: 14 },
+  wrap: { padding: 18, paddingBottom: 140, gap: 14 },
   header: { gap: 7 },
   eyebrow: { color: palette.inkMuted, textTransform: 'uppercase', fontWeight: '900', letterSpacing: 1.2, fontSize: 12 },
   title: { color: palette.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1.2 },
@@ -212,4 +369,27 @@ const styles = StyleSheet.create({
   lineLabelItem: { flex: 1, alignItems: 'center', gap: 3 },
   lineValue: { color: palette.ink, fontSize: 12, fontWeight: '900' },
   lineLabel: { color: palette.inkMuted, fontSize: 10, fontWeight: '700' },
+  heatmapBody: { flexDirection: 'row', gap: 5 },
+  weekdayColumn: { gap: CELL_GAP },
+  weekdaySlot: { alignItems: 'center', justifyContent: 'center' },
+  weekdayText: { fontSize: 9, fontWeight: '700' },
+  heatmapGrid: { flexDirection: 'row', gap: CELL_GAP },
+  heatmapColumn: { gap: CELL_GAP },
+  heatmapCell: { borderRadius: 3 },
+  heatmapLegend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  legendScale: { flexDirection: 'row', alignItems: 'center', gap: CELL_GAP },
+  heatmapMeta: { fontSize: 11, fontWeight: '700' },
+  masteryBar: { flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden' },
+  masteryLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  masteryLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 5, minWidth: '44%' },
+  masteryDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1, borderColor: palette.line },
+  masteryLegendLabel: { fontSize: 11, fontWeight: '700' },
+  masteryLegendValue: { fontSize: 12, fontWeight: '900' },
+  favRow: { borderRadius: radius.xl, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  favIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  favTextWrap: { flex: 1, gap: 2 },
+  favTitle: { fontSize: 15, fontWeight: '900' },
+  favMeta: { fontSize: 12, fontWeight: '600' },
+  favCount: { fontSize: 14, fontWeight: '900' },
+  pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
 });

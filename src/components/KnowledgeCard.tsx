@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEve
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow } from '../theme/tokens';
+import { AppButton } from './AppButton';
 import { CardHeaderImage } from './CardHeaderImage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 
@@ -15,6 +16,8 @@ type Props = {
   footer?: React.ReactNode;
   titleInHeader?: boolean;
   showAnnotationPreview?: boolean;
+  // 复习模式的回忆遮罩：hidden 时隐藏正文与批注，先让用户看标题回忆。
+  recall?: { hidden: boolean; onReveal: () => void };
   onDoubleTapBody?: (pageX: number, pageY: number) => void;
   onEditAnnotation?: () => void;
 };
@@ -53,7 +56,7 @@ function stripDuplicatedLeadingTitle(markdown: string, title: string) {
 // 深色模式下浅色卡片上的深色字体会不可读：把四个预设色映射到
 // 同色相的浅色变体（调色板各自的深色模式取值），保留用户的选择；
 // 其他自定义颜色按原样使用。浅色模式直接应用所选颜色。
-export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, onDoubleTapBody, onEditAnnotation }: Props) {
+export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, recall, onDoubleTapBody, onEditAnnotation }: Props) {
   const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
@@ -205,7 +208,14 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
         </View>
       )}
 
-      {compact ? (
+      {recall?.hidden ? (
+        <View style={[styles.recallVeil, { backgroundColor: theme.card }]}>
+          <Ionicons name="eye-off-outline" size={30} color={theme.inkMuted} />
+          <Text style={[styles.recallTitle, { color: theme.ink, fontFamily: settings.fontFamily }]}>先主动回忆</Text>
+          <Text style={[styles.recallBody, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>看着标题，在脑海里过一遍这张卡片的内容，再对照答案检查自己记住了多少。</Text>
+          <AppButton label="显示答案" icon="eye-outline" onPress={recall.onReveal} style={styles.recallButton} />
+        </View>
+      ) : compact ? (
         <View style={[styles.compactContent, { backgroundColor: theme.paperElevated }]}>{body}</View>
       ) : (
         <ScrollView
@@ -415,6 +425,27 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#EEE6DA',
     backgroundColor: '#FFFFFF',
+  },
+  recallVeil: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 34,
+  },
+  recallTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  recallBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  recallButton: {
+    minWidth: 190,
   },
   pressed: {
     opacity: 0.72,
