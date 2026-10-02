@@ -410,10 +410,11 @@ export async function buildAheadReviewCards(limit = 30) {
   );
 }
 
-// 首页「今天推荐」：随机挑几张未读新卡，让内容本身成为 GET 的入口。
+// 首页「今天推荐」：从全部卡片中随机挑几张做内容展示（含已 GET 的卡）。
+// 点击推荐卡的行为仍是随机 GET：从 isGot = 0 的未读池里抽取。
 export async function getRecommendedCards(limit = 3): Promise<CardRecord[]> {
   const db = await getDb();
-  return db.getAllAsync<CardRecord>(`${cardSelect} WHERE cards.isGot = 0 ORDER BY RANDOM() LIMIT ?`, limit);
+  return db.getAllAsync<CardRecord>(`${cardSelect} ORDER BY RANDOM() LIMIT ?`, limit);
 }
 
 // 简化版间隔重复：reviewStage 对应间隔档位（天）。
@@ -572,7 +573,7 @@ export async function getStatistics(): Promise<Statistics> {
   const dayAfterStart = new Date(tomorrowStart);
   dayAfterStart.setDate(tomorrowStart.getDate() + 1);
   const todayStart = startOfLocalDay();
-  const [totalCards, gotCards, favoriteCards, annotatedCards, documents, dueCards, recent, strengthening, mastered, weak, dueWeak, tomorrowDue, todayReviewRow] = await Promise.all([
+  const [totalCards, gotCards, favoriteCards, annotatedCards, documents, dueCards, recent, fuzzy, clear, forgot, weak, dueWeak, tomorrowDue, todayReviewRow] = await Promise.all([
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isFavorite = 1'),
@@ -580,8 +581,9 @@ export async function getStatistics(): Promise<Statistics> {
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM documents'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND nextReviewAt IS NOT NULL AND nextReviewAt <= ?', now),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND mastery IS NULL'),
-    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND mastery IS NOT NULL AND reviewStage <= 2'),
-    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE reviewStage >= 3'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE mastery = 2'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE mastery = 3'),
+    db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE mastery = 1'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE forgetCount > 0'),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE isGot = 1 AND (mastery = 1 OR forgetCount > 0) AND nextReviewAt IS NOT NULL AND nextReviewAt <= ?', now),
     db.getFirstAsync<CountRow>('SELECT COUNT(*) as count FROM cards WHERE nextReviewAt >= ? AND nextReviewAt < ?', tomorrowStart.toISOString(), dayAfterStart.toISOString()),
@@ -621,8 +623,9 @@ export async function getStatistics(): Promise<Statistics> {
     documents: documents?.count ?? 0,
     dueCount: dueCards?.count ?? 0,
     recentCount: recent?.count ?? 0,
-    strengtheningCount: strengthening?.count ?? 0,
-    masteredCount: mastered?.count ?? 0,
+    fuzzyCount: fuzzy?.count ?? 0,
+    clearCount: clear?.count ?? 0,
+    forgotCount: forgot?.count ?? 0,
     weakCount: weak?.count ?? 0,
     dueWeakCount: dueWeak?.count ?? 0,
     tomorrowCount: tomorrowDue?.count ?? 0,

@@ -2,21 +2,23 @@ import type { CardRecord } from '../domain/types';
 import { masteryColors } from '../theme/tokens';
 
 export type ReviewStatus = {
-  key: 'unread' | 'recent' | 'due' | 'mastered' | 'strengthening';
+  key: 'unread' | 'recent' | 'due' | 'mastered' | 'fuzzy' | 'forgot';
   label: string;
   color: string;
 };
 
 const unreadColor = '#9A948A';
 
-// 卡片当前的复习状态：GET 流程与复习流程共用的一套口径。
-// 新近记忆 = 已 get 但还没在复习里评过级；之后按评级与档位流转。
+// 卡片当前的复习状态：与复习 Tab 的四状态仪表同一口径 ——
+// 按「最近一次反馈」划分（记得 → 已掌握，模糊记得 → 巩固中，不记得 → 遗忘，未评级 → 新近记忆）；
+// 到期待复习是调度层面的瞬时状态，优先展示。
 export function cardReviewStatus(card: Pick<CardRecord, 'isGot' | 'mastery' | 'nextReviewAt' | 'reviewStage'>): ReviewStatus {
   if (!card.isGot) return { key: 'unread', label: '未 GET', color: unreadColor };
   if (card.mastery === null || card.mastery === undefined) return { key: 'recent', label: '新近记忆', color: '#526B78' };
-  if (card.nextReviewAt && card.nextReviewAt <= new Date().toISOString()) return { key: 'due', label: '待复习', color: masteryColors[1] };
-  if (card.reviewStage >= 3) return { key: 'mastered', label: '已掌握', color: masteryColors[3] };
-  return { key: 'strengthening', label: '巩固中', color: masteryColors[2] };
+  if (card.nextReviewAt && card.nextReviewAt <= new Date().toISOString()) return { key: 'due', label: '待复习', color: masteryColors[2] };
+  if (card.mastery === 3) return { key: 'mastered', label: '已掌握', color: masteryColors[3] };
+  if (card.mastery === 2) return { key: 'fuzzy', label: '巩固中', color: masteryColors[2] };
+  return { key: 'forgot', label: '遗忘', color: masteryColors[1] };
 }
 
 // 下次复习时间的人类表达：今天/明天用词，其余显示日期。

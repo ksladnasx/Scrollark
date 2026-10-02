@@ -236,7 +236,16 @@ export function SettingsScreen({ settings, onSettingsChanged, onReset, onCardIma
               />
             ))}
           </SelectRow>
-          <ChipRow label="正文字号" theme={theme} settings={settings}>
+          <ChipRow
+            label="正文字号"
+            extra={(
+              <Text style={[styles.fontDemo, { color: theme.ink, fontFamily: settings.fontFamily, fontSize: settings.fontSize + 8 }]}>
+                Aa
+              </Text>
+            )}
+            theme={theme}
+            settings={settings}
+          >
             {[16, 18, 20, 22].map((size) => (
               <Chip key={`size-${size}`} label={`${size}`} active={settings.fontSize === size} theme={theme} onPress={() => { void update('fontSize', size); }} />
             ))}
@@ -474,10 +483,13 @@ function OptionRow({ label, subLabel, active, fontFamily, theme, onPress }: { la
   );
 }
 
-function ChipRow({ label, children, theme, settings }: { label: string; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
+function ChipRow({ label, extra, children, theme, settings }: { label: string; extra?: React.ReactNode; children: React.ReactNode; theme: AppTheme; settings: Settings }) {
   return (
     <View style={styles.rowInner}>
-      <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
+      <View style={styles.chipRowHead}>
+        <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
+        {extra}
+      </View>
       <View style={styles.chipWrap}>{children}</View>
     </View>
   );
@@ -533,10 +545,14 @@ const styles = StyleSheet.create({
   card: { borderRadius: radius.xl, borderWidth: 1, overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
   rowInner: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+  chipRowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   selectRowInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16, paddingVertical: 14 },
   rowLabel: { fontSize: 14, fontWeight: '700' },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end', minWidth: 0 },
   rowValue: { fontSize: 13, fontWeight: '600', flexShrink: 1, maxWidth: '70%', textAlign: 'right' },
+  // 字体演示字符：绝不加 fontWeight —— Android 上自定义字体没有粗体变体时
+  // 会回退到系统字体，导致演示字符看起来"字体没生效"。
+  fontDemo: { letterSpacing: 0.5 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { minHeight: 34, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   chipText: { fontSize: 13, fontWeight: '700' },

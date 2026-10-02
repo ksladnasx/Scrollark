@@ -7,12 +7,13 @@ import { useAppTheme } from '../theme/ThemeContext';
 import { shadow } from '../theme/tokens';
 
 // 底部一级导航（iOS 风格）：悬浮圆角容器，脱离屏幕底边，留出 Home Indicator。
-// 首页 / 复习 / 学习 / 知识库；收藏与批注、设置分别从学习页和首页右上角进入。
+// 首页 / 复习 / 我的 / 知识库 / 设置；收藏与批注从「我的」页进入。
 const tabBarItems: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'home', label: '首页', icon: 'home-outline', activeIcon: 'home' },
   { key: 'review', label: '复习', icon: 'repeat-outline', activeIcon: 'repeat' },
-  { key: 'stats', label: '学习', icon: 'school-outline', activeIcon: 'school' },
+  { key: 'stats', label: '我的', icon: 'person-outline', activeIcon: 'person' },
   { key: 'knowledge', label: '知识库', icon: 'library-outline', activeIcon: 'library' },
+  { key: 'settings', label: '设置', icon: 'settings-outline', activeIcon: 'settings' },
 ];
 
 type Props = {

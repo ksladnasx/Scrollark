@@ -23,7 +23,7 @@ import { appFonts } from './theme/fonts';
 import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import { palette, radius } from './theme/tokens';
 
-const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, todayReviews: 0, goal: 10, streakDays: 0, week: [], documents: 0, dueCount: 0, recentCount: 0, strengtheningCount: 0, masteredCount: 0, weakCount: 0, dueWeakCount: 0, tomorrowCount: 0 };
+const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, todayReviews: 0, goal: 10, streakDays: 0, week: [], documents: 0, dueCount: 0, recentCount: 0, fuzzyCount: 0, clearCount: 0, forgotCount: 0, weakCount: 0, dueWeakCount: 0, tomorrowCount: 0 };
 const initialSettings: Settings = {
   sessionCardCount: 10,
   fontSize: 18,
@@ -43,14 +43,17 @@ const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof ty
   review: { title: '复习', subtitle: 'Spaced Review', icon: 'repeat-outline' },
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
-  stats: { title: '学习', subtitle: 'Learning Progress', icon: 'school-outline' },
+  stats: { title: '我的', subtitle: 'My Learning', icon: 'person-outline' },
   settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },
 };
 
 export default function App() {
   const systemScheme = useColorScheme();
   const [fontsLoaded, fontError] = useFonts(appFonts);
-  const [route, setRoute] = React.useState<Route>({ name: 'tabs', tab: 'home' });
+  // 轻量导航历史：跳转压栈、返回出栈。返回键与各页返回按钮都回到上一次的页面，
+  // 而不是固定回首页；只有显式「返回首页」或清空数据才重置历史。
+  const [nav, setNav] = React.useState<{ current: Route; history: Route[] }>({ current: { name: 'tabs', tab: 'home' }, history: [] });
+  const route = nav.current;
   const [ready, setReady] = React.useState(false);
   const [settings, setSettings] = React.useState<Settings>(initialSettings);
   const [stats, setStats] = React.useState<Statistics>(initialStats);
@@ -93,6 +96,31 @@ export default function App() {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
   }, []);
 
+  // 压栈跳转：把当前页面记入历史（同页重复跳转不压栈，历史上限 25 条防无限增长）。
+  const navigate = React.useCallback((next: Route) => {
+    setNav((s) => (JSON.stringify(s.current) === JSON.stringify(next) ? s : { current: next, history: [...s.history.slice(-24), s.current] }));
+  }, []);
+
+  // 返回上一次的页面；没有历史时回到首页（首页再返回则交给系统退出应用）。
+  const goBack = React.useCallback(() => {
+    setNav((s) => {
+      if (s.history.length === 0) {
+        return s.current.name === 'tabs' && s.current.tab === 'home' ? s : { current: { name: 'tabs', tab: 'home' }, history: [] };
+      }
+      return { current: s.history[s.history.length - 1], history: s.history.slice(0, -1) };
+    });
+  }, []);
+
+  // 显式「返回首页」：重置历史，返回键不会再穿过陈旧的流程页。
+  const goHome = React.useCallback(() => {
+    setNav({ current: { name: 'tabs', tab: 'home' }, history: [] });
+  }, []);
+
+  // 流程页之间的替换（会话 → 总结 → 下一轮）：不压栈，返回时跳过中间态。
+  const replace = React.useCallback((next: Route) => {
+    setNav((s) => ({ ...s, current: next }));
+  }, []);
+
   React.useEffect(() => {
     (async () => {
       try {
@@ -106,23 +134,21 @@ export default function App() {
     })();
   }, [refresh]);
 
-  // Android 返回手势/返回键：知识库、收藏等二级页和会话总结页返回主页；
-  // 刷卡页由 SessionScreen 自己处理；主页保持系统默认（退出应用）。
+  // Android 返回手势/返回键：统一回退到上一次的页面；只有首页且无历史时交给系统（退出应用）。
+  // 刷卡页与复习页注册了自己的返回拦截，会先于这里触发。
   React.useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (route.name === 'tabs' && route.tab !== 'home') {
-        setRoute({ name: 'tabs', tab: 'home' });
-        return true;
+      if (route.name === 'tabs' && route.tab === 'home' && nav.history.length === 0) {
+        return false;
       }
       if (route.name === 'search' || route.name === 'sessionEnd') {
         void refresh();
-        setRoute({ name: 'tabs', tab: 'home' });
-        return true;
       }
-      return false;
+      goBack();
+      return true;
     });
     return () => subscription.remove();
-  }, [refresh, route]);
+  }, [goBack, nav.history.length, refresh, route]);
 
   const loaded = ready && (fontsLoaded || Boolean(fontError));
 
@@ -157,7 +183,7 @@ export default function App() {
       <ThemeProvider settings={settings}>
         <SafeAreaProvider>
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
-          <SearchScreen settings={settings} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} onShare={setSharingCard} />
+          <SearchScreen settings={settings} onBack={goBack} onShare={setSharingCard} />
           {sharingCard ? (
             <ShareCardOverlay
               key={sharingCard.id}
@@ -178,10 +204,10 @@ export default function App() {
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <SessionScreen
             settings={settings}
-            onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
+            onClose={() => { void refresh(); goBack(); }}
             onChanged={refreshSoon}
-            onEnd={(summary) => { void refresh(); setRoute({ name: 'sessionEnd', summary }); }}
-            onStartReview={() => setRoute({ name: 'review' })}
+            onEnd={(summary) => { void refresh(); replace({ name: 'sessionEnd', summary }); }}
+            onStartReview={() => navigate({ name: 'review' })}
           />
         </SafeAreaProvider>
       </ThemeProvider>
@@ -197,9 +223,9 @@ export default function App() {
             mode={route.mode}
             settings={settings}
             tomorrowCount={stats.tomorrowCount}
-            onClose={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
+            onClose={() => { void refresh(); goBack(); }}
             onChanged={refreshSoon}
-            onStartSession={() => setRoute({ name: 'session' })}
+            onStartSession={() => navigate({ name: 'session' })}
           />
         </SafeAreaProvider>
       </ThemeProvider>
@@ -213,9 +239,9 @@ export default function App() {
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <SessionEndScreen
             summary={route.summary}
-            onHome={() => { void refresh(); setRoute({ name: 'tabs', tab: 'home' }); }}
-            onContinue={() => setRoute({ name: 'session' })}
-            onStartReview={() => setRoute({ name: 'review' })}
+            onHome={() => { void refresh(); goHome(); }}
+            onContinue={() => replace({ name: 'session' })}
+            onStartReview={() => navigate({ name: 'review' })}
           />
         </SafeAreaProvider>
       </ThemeProvider>
@@ -233,20 +259,21 @@ export default function App() {
               <HomeScreen
                 stats={stats}
                 settings={settings}
-                onStartSession={() => setRoute({ name: 'session' })}
-                onNavigate={(tab) => setRoute({ name: 'tabs', tab })}
-                onSearch={() => setRoute({ name: 'search' })}
+                onStartSession={() => navigate({ name: 'session' })}
+                onStartAheadReview={() => navigate({ name: 'review', mode: 'ahead' })}
+                onNavigate={(tab) => navigate({ name: 'tabs', tab })}
+                onSearch={() => navigate({ name: 'search' })}
               />
             ) : (
               <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
-                <PageHeader tab={activeTab} onBack={() => setRoute({ name: 'tabs', tab: 'home' })} />
+                <PageHeader tab={activeTab} onBack={goBack} />
                 <View style={styles.pageBody}>
-                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, setRoute, refresh, setSettings, onShare: setSharingCard })}
+                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, navigate, goHome, refresh, setSettings, onShare: setSharingCard })}
                 </View>
               </SafeAreaView>
             )}
           </View>
-          <TabBar active={activeTab} onChange={(tab) => setRoute({ name: 'tabs', tab })} />
+          <TabBar active={activeTab} onChange={(tab) => navigate({ name: 'tabs', tab })} />
           {sharingCard ? (
             <ShareCardOverlay
               key={sharingCard.id}
@@ -288,7 +315,8 @@ function renderPage(
     documents: DocumentRecord[];
     cards: CardRecord[];
     favorites: CardRecord[];
-    setRoute: React.Dispatch<React.SetStateAction<Route>>;
+    navigate: (next: Route) => void;
+    goHome: () => void;
     refresh: () => Promise<void>;
     setSettings: React.Dispatch<React.SetStateAction<Settings>>;
     onShare: (card: CardRecord) => void;
@@ -300,9 +328,9 @@ function renderPage(
         <ReviewHubScreen
           stats={data.stats}
           settings={data.settings}
-          onStartReview={() => data.setRoute({ name: 'review' })}
-          onStartAheadReview={() => data.setRoute({ name: 'review', mode: 'ahead' })}
-          onStartGet={() => data.setRoute({ name: 'session' })}
+          onStartReview={() => data.navigate({ name: 'review' })}
+          onStartAheadReview={() => data.navigate({ name: 'review', mode: 'ahead' })}
+          onStartGet={() => data.navigate({ name: 'session' })}
         />
       );
     case 'knowledge':
@@ -312,20 +340,20 @@ function renderPage(
           cards={data.cards}
           settings={data.settings}
           onImported={() => void data.refresh()}
-          onStartSession={() => data.setRoute({ name: 'session' })}
+          onStartSession={() => data.navigate({ name: 'session' })}
           onShare={data.onShare}
         />
       );
     case 'favorites':
       return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
-      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.setRoute({ name: 'tabs', tab: 'favorites' })} />;
+      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} />;
     case 'settings':
       return (
         <SettingsScreen
           settings={data.settings}
           onSettingsChanged={(next) => setImmediateSettings(data.setSettings, next)}
-          onReset={() => { void data.refresh(); data.setRoute({ name: 'tabs', tab: 'home' }); }}
+          onReset={() => { void data.refresh(); data.goHome(); }}
           onCardImagesReset={() => { void data.refresh(); }}
           onDataChanged={() => { void data.refresh(); }}
         />

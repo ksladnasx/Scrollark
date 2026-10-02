@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppButton } from '../components/AppButton';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RingProgress } from '../components/RingProgress';
 import type { Settings, Statistics } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { masteryColors, radius } from '../theme/tokens';
@@ -14,78 +14,131 @@ type Props = {
   onStartGet: () => void;
 };
 
-// 复习状态的三个阶段：随评级与间隔在三条状态间流转，而不是固定分类。
-const reviewStates: { label: string; countKey: keyof Statistics; color: string; hint: string }[] = [
-  { label: '新近记忆', countKey: 'recentCount', color: '#526B78', hint: '刚 GET，等待第一次复习' },
-  { label: '巩固中', countKey: 'strengtheningCount', color: masteryColors[2], hint: '间隔 1-7 天，反复巩固' },
-  { label: '已掌握', countKey: 'masteredCount', color: masteryColors[3], hint: '间隔 16 天以上' },
-];
+// 复习三状态小环的配色：与全局状态色一致（蓝 = 新近、琥珀 = 巩固、红 = 遗忘）。
+const recentColor = '#526B78';
 
 export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadReview, onStartGet }: Props) {
   const theme = useAppTheme();
   const fontFamily = settings.fontFamily;
-  const hasDue = stats.dueCount > 0;
+  // 今日复习进度：已评级次数 /（已评级 + 当前仍到期），评过的都算进度。
+  const done = stats.todayReviews;
+  const total = done + stats.dueCount;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const gotTotal = Math.max(1, stats.gotCards);
+  // 仪表盘配色：进行中用主题蓝，今日全部完成切换为打卡金色，避免使用墨色。
+  const ringColor = total > 0 && done >= total ? '#F2B737' : theme.blue;
+
+  // 四个状态按「最近一次反馈」划分，互斥且加总等于已 GET 数：
+  // 记得 → 已掌握；模糊记得 → 需要复习；不记得 → 遗忘；GET 后还没评过级 → 新近记忆。
+  const stateRings = [
+    { key: 'recent', label: '新近记忆', count: stats.recentCount, color: recentColor },
+    { key: 'fuzzy', label: '需要复习', count: stats.fuzzyCount, color: masteryColors[2] },
+    { key: 'clear', label: '已掌握', count: stats.clearCount, color: masteryColors[3] },
+    { key: 'forgot', label: '遗忘', count: stats.forgotCount, color: masteryColors[1] },
+  ];
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
-      <View style={[styles.heroCard, { backgroundColor: theme.accentSoft }]}>
-        <Text style={[styles.heroLabel, { color: theme.ink, fontFamily }]}>今日待复习</Text>
-        <View style={styles.heroValueRow}>
-          <Text style={[styles.heroValue, { color: theme.ink, fontFamily }]}>{stats.dueCount}</Text>
-          <Text style={[styles.heroUnit, { color: theme.ink, fontFamily }]}>张</Text>
-        </View>
-        {hasDue ? (
-          <>
-            <AppButton label="开始复习" icon="repeat" variant="dark" onPress={onStartReview} style={styles.heroButton} />
-            {stats.dueWeakCount > 0 ? (
-              <Text style={[styles.heroMeta, { color: theme.ink, fontFamily }]}>其中 {stats.dueWeakCount} 张曾忘记过，会优先出现。</Text>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <View style={styles.doneRow}>
-              <Ionicons name="checkmark-done-circle" size={18} color={masteryColors[3]} />
-              <Text style={[styles.doneText, { color: theme.ink, fontFamily }]}>今天的复习已经完成</Text>
-            </View>
-            {stats.tomorrowCount > 0 ? (
-              <Text style={[styles.heroMeta, { color: theme.ink, fontFamily }]}>明天预计 {stats.tomorrowCount} 张到期，记得回来。</Text>
-            ) : null}
-            <AppButton label="去 GET 新卡" icon="flash-outline" variant="light" onPress={onStartGet} style={styles.heroButton} />
-          </>
-        )}
+      <View style={[styles.heroCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <Text style={[styles.heroLabel, { color: theme.inkMuted, fontFamily }]}>今日复习进度</Text>
+        <RingProgress size={150} strokeWidth={13} progress={total > 0 ? done / total : 0} color={ringColor} trackColor={theme.paperSoft}>
+          <View style={styles.ringCenter}>
+            <Text style={[styles.ringValue, { color: theme.ink, fontFamily }]}>{done}</Text>
+            <Text style={[styles.ringTotal, { color: theme.inkMuted, fontFamily }]}>/ {total}</Text>
+          </View>
+        </RingProgress>
+        <Text style={[styles.heroCaption, { color: theme.ink, fontFamily }]}>
+          {total > 0 ? `已完成 ${pct}%` : '今天还没有复习记录'}
+        </Text>
+        <Text style={[styles.heroMeta, { color: theme.inkMuted, fontFamily }]}>
+          {stats.dueCount > 0
+            ? `今日待复习 ${stats.dueCount} 张 · 到期的评过都算进度`
+            : total > 0
+              ? '今日到期卡片已全部复习完'
+              : '到期后这里会显示今日进度'}
+        </Text>
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-        <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily }]}>复习状态</Text>
+        <View style={styles.cardHead}>
+          <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily }]}>复习状态</Text>
+          <Text style={[styles.cardHeadMeta, { color: theme.inkMuted, fontFamily }]}>占已 GET {stats.gotCards} 张</Text>
+        </View>
         <View style={styles.stateRow}>
-          {reviewStates.map((state) => (
-            <View key={state.label} style={styles.stateItem}>
-              <View style={[styles.stateDot, { backgroundColor: state.color }]} />
-              <Text style={[styles.stateValue, { color: theme.ink, fontFamily }]}>{stats[state.countKey] as number}</Text>
-              <Text style={[styles.stateLabel, { color: theme.inkMuted, fontFamily }]}>{state.label}</Text>
+          {stateRings.map((ring) => (
+            <View key={ring.key} style={styles.stateItem}>
+              <RingProgress size={64} strokeWidth={6} progress={ring.count / gotTotal} color={ring.color} trackColor={theme.paperSoft}>
+                <Text style={[styles.stateValue, { color: theme.ink, fontFamily }]}>{ring.count}</Text>
+              </RingProgress>
+              <Text style={[styles.stateLabel, { color: theme.inkMuted, fontFamily }]}>{ring.label}</Text>
             </View>
           ))}
         </View>
         <Text style={[styles.stateHint, { color: theme.inkMuted, fontFamily }]}>
-          {reviewStates.map((state) => `${state.label}：${state.hint}`).join('；')}。
+          状态按最近一次反馈划分：记得 → 已掌握 · 模糊记得 → 需要复习 · 不记得 → 遗忘；刚 GET 还没评过级的为新近记忆。
         </Text>
         {stats.weakCount > 0 ? (
-          <Text style={[styles.weakNote, { color: theme.inkMuted, fontFamily }]}>有 {stats.weakCount} 张卡片忘记过，复习时会排在最前面。</Text>
+          <Text style={[styles.weakNote, { color: theme.inkMuted, fontFamily }]}>遗忘过的卡片在到期复习时排最前面，直到重新记住。</Text>
         ) : null}
-        <View style={[styles.aheadBox, { backgroundColor: theme.paperSoft }]}>
-          <View style={styles.aheadTextWrap}>
-            <Text style={[styles.aheadTitle, { color: theme.ink, fontFamily }]}>提前复习</Text>
-            <Text style={[styles.aheadMeta, { color: theme.inkMuted, fontFamily }]}>不用等到期，新近记忆和巩固中的卡片现在就能过一遍。</Text>
+      </View>
+
+      <View style={[styles.card, styles.actionCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="提前复习"
+          onPress={onStartAheadReview}
+          style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+        >
+          <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
+            <Ionicons name="time-outline" size={16} color={theme.accent} />
           </View>
-          <AppButton label="去复习" icon="time-outline" variant="dark" onPress={onStartAheadReview} style={styles.aheadButton} />
-        </View>
+          <View style={styles.actionTextWrap}>
+            <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>提前复习</Text>
+            <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>主动复习还未到期的知识</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
+        </Pressable>
+        <View style={[styles.actionDivider, { backgroundColor: theme.line }]} />
+        {stats.dueCount > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="继续复习"
+            onPress={onStartReview}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
+              <Ionicons name="repeat" size={16} color={theme.accent} />
+            </View>
+            <View style={styles.actionTextWrap}>
+              <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>继续复习</Text>
+              <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>还有 {stats.dueCount} 张到期卡片</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="去 GET 新卡"
+            onPress={onStartGet}
+            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
+              <Ionicons name="flash-outline" size={16} color={theme.accent} />
+            </View>
+            <View style={styles.actionTextWrap}>
+              <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>去 GET 新卡</Text>
+              <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>继续获取新的知识</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
+          </Pressable>
+        )}
       </View>
 
       <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
         <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily }]}>复习是怎么安排的？</Text>
         <Text style={[styles.bodyText, { color: theme.inkMuted, fontFamily }]}>
-          系统按遗忘曲线自动调度，你不需要自己安排复习内容：GET 的卡片第二天进入第一次复习；评「记得」会把间隔逐步拉长（1 / 3 / 7 / 16 / 35 天），评「模糊记得」缩短间隔，评「不记得」则明天再来。到期的卡片会自动出现在下一轮复习里，也可以随时用「提前复习」过一遍新近记忆和巩固中的卡片。
+          系统按遗忘曲线自动调度：GET 的卡片第二天进入第一次复习；评「记得」把间隔逐步拉长（1 / 3 / 7 / 16 / 35 天），评「模糊记得」缩短间隔，评「不记得」明天再来。复习按到期卡片进行，复习完成后可以继续去 GET 新卡。
         </Text>
       </View>
     </ScrollView>
@@ -94,28 +147,30 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
 
 const styles = StyleSheet.create({
   wrap: { padding: 18, paddingBottom: 140, gap: 14 },
-  heroCard: { borderRadius: radius.xl, backgroundColor: '#D6C2A0', padding: 22, gap: 10 },
-  heroLabel: { fontSize: 14, fontWeight: '800', opacity: 0.78 },
-  heroValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  heroValue: { fontSize: 64, lineHeight: 70, fontWeight: '900', letterSpacing: -2 },
-  heroUnit: { fontSize: 18, fontWeight: '800', opacity: 0.7 },
-  heroButton: { alignSelf: 'stretch', marginTop: 4 },
-  heroMeta: { fontSize: 12, fontWeight: '700', opacity: 0.78 },
-  doneRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  doneText: { fontSize: 15, fontWeight: '800' },
-  card: { borderRadius: radius.xl, backgroundColor: '#FFF9EE', borderWidth: 1, borderColor: '#DED2BE', padding: 18, gap: 12 },
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: 22, alignItems: 'center', gap: 8 },
+  heroLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
+  ringCenter: { alignItems: 'center' },
+  ringValue: { fontSize: 38, lineHeight: 42, fontWeight: '900', letterSpacing: -1 },
+  ringTotal: { fontSize: 14, fontWeight: '800' },
+  heroCaption: { fontSize: 16, fontWeight: '900', marginTop: 2 },
+  heroMeta: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  card: { borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 12 },
+  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardHeadMeta: { fontSize: 11, fontWeight: '700' },
   sectionTitle: { fontSize: 17, fontWeight: '900' },
   stateRow: { flexDirection: 'row', gap: 10 },
-  stateItem: { flex: 1, borderRadius: radius.lg, backgroundColor: 'rgba(0,0,0,0.03)', paddingVertical: 14, alignItems: 'center', gap: 3 },
-  stateDot: { width: 9, height: 9, borderRadius: 5, marginBottom: 3 },
-  stateValue: { fontSize: 26, fontWeight: '900', letterSpacing: -0.6 },
-  stateLabel: { fontSize: 12, fontWeight: '800' },
+  stateItem: { flex: 1, alignItems: 'center', gap: 7 },
+  stateValue: { fontSize: 17, fontWeight: '900' },
+  stateLabel: { fontSize: 11, fontWeight: '800' },
   stateHint: { fontSize: 11, lineHeight: 18, fontWeight: '600' },
-  weakNote: { fontSize: 12, lineHeight: 18, fontWeight: '700' },
-  aheadBox: { borderRadius: radius.lg, padding: 14, gap: 10 },
-  aheadTextWrap: { gap: 3 },
-  aheadTitle: { fontSize: 14, fontWeight: '900' },
-  aheadMeta: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  aheadButton: { alignSelf: 'flex-start' },
+  weakNote: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
+  actionCard: { paddingVertical: 6, paddingHorizontal: 16, gap: 0 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  actionIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  actionTextWrap: { flex: 1, gap: 2 },
+  actionTitle: { fontSize: 15, fontWeight: '900' },
+  actionMeta: { fontSize: 12, fontWeight: '600' },
+  actionDivider: { height: StyleSheet.hairlineWidth },
   bodyText: { fontSize: 13, lineHeight: 22 },
+  pressed: { opacity: 0.72 },
 });

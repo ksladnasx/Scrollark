@@ -67,10 +67,12 @@ export type Statistics = {
   week: { day: string; count: number }[];
   documents: number;
   dueCount: number;
-  // 复习三状态：新近记忆（已 get 未评级）/ 巩固中（评级后档位 0-2）/ 已掌握（档位 3+）。
+  // 复习四状态按「最近一次反馈」划分（互斥，加总 = 已 GET 数）：
+  // 新近记忆 = 已 get 未评级；需要复习 = 最近评「模糊记得」；已掌握 = 最近评「记得」；遗忘 = 最近评「不记得」。
   recentCount: number;
-  strengtheningCount: number;
-  masteredCount: number;
+  fuzzyCount: number;
+  clearCount: number;
+  forgotCount: number;
   weakCount: number;
   dueWeakCount: number;
   tomorrowCount: number;

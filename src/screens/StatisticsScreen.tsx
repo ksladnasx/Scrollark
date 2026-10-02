@@ -133,13 +133,15 @@ export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics
     setChartWidth(event.nativeEvent.layout.width);
   }, []);
   const selectedPoint = selectedDay === null ? null : points.find((point) => point.day === selectedDay) ?? null;
-  // 掌握程度分布：全部卡片按复习状态分成四段（互斥、加总等于总卡片数）。
+  // 掌握程度分布：全部卡片按「最近一次反馈」分成五段（互斥、加总等于总卡片数），
+  // 与复习 Tab 的状态仪表同一口径。
   const unreadCount = Math.max(0, stats.totalCards - stats.gotCards);
   const masterySegments = [
     { label: '未读', count: unreadCount, color: theme.paperSoft },
     { label: '新近记忆', count: stats.recentCount, color: newRecentColor },
-    { label: '巩固中', count: stats.strengtheningCount, color: masteryColors[2] },
-    { label: '已掌握', count: stats.masteredCount, color: masteryColors[3] },
+    { label: '需要复习', count: stats.fuzzyCount, color: masteryColors[2] },
+    { label: '已掌握', count: stats.clearCount, color: masteryColors[3] },
+    { label: '遗忘', count: stats.forgotCount, color: masteryColors[1] },
   ];
 
   return (
@@ -153,7 +155,25 @@ export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics
           <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.ink }]} />
         </View>
         <Text style={[styles.progressText, { color: theme.ink }]}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
+        <Text style={[styles.progressText, { color: theme.ink }]}>今日 GET {stats.todayGets} · 今日复习 {stats.todayReviews} · 已连续 {stats.streakDays} 天</Text>
       </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="打开收藏与批注"
+        onPress={onOpenFavorites}
+        style={({ pressed }) => [styles.favRow, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+      >
+        <View style={[styles.favIcon, { backgroundColor: theme.paperSoft }]}>
+          <Ionicons name="heart-outline" size={15} color={theme.red} />
+        </View>
+        <View style={styles.favTextWrap}>
+          <Text style={[styles.favTitle, { color: theme.ink }]}>收藏与批注</Text>
+          <Text style={[styles.favMeta, { color: theme.inkMuted }]}>我标记过的重要卡片</Text>
+        </View>
+        <Text style={[styles.favCount, { color: theme.inkMuted }]}>{stats.favoriteCards}</Text>
+        <Ionicons name="chevron-forward" size={16} color={theme.inkMuted} />
+      </Pressable>
 
       <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
         <View style={styles.goalHead}>
@@ -290,23 +310,6 @@ export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics
           </View>
         </View>
       </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="打开收藏与批注"
-        onPress={onOpenFavorites}
-        style={({ pressed }) => [styles.favRow, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
-      >
-        <View style={[styles.favIcon, { backgroundColor: theme.paperSoft }]}>
-          <Ionicons name="heart-outline" size={15} color={theme.red} />
-        </View>
-        <View style={styles.favTextWrap}>
-          <Text style={[styles.favTitle, { color: theme.ink }]}>收藏与批注</Text>
-          <Text style={[styles.favMeta, { color: theme.inkMuted }]}>我标记过的重要卡片</Text>
-        </View>
-        <Text style={[styles.favCount, { color: theme.inkMuted }]}>{stats.favoriteCards}</Text>
-        <Ionicons name="chevron-forward" size={16} color={theme.inkMuted} />
-      </Pressable>
     </ScrollView>
   );
 }

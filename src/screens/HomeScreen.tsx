@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
-import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType, useWindowDimensions } from 'react-native';
+import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
@@ -9,6 +9,7 @@ import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHo
 import { getRecommendedCards } from '../data/repository';
 import { HomeShareOverlay } from '../components/HomeShareOverlay';
 import { KnowledgeCard } from '../components/KnowledgeCard';
+import { AppButton } from '../components/AppButton';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius, type AppTheme } from '../theme/tokens';
 
@@ -16,6 +17,7 @@ type Props = {
   stats: Statistics;
   settings: Settings;
   onStartSession: () => void;
+  onStartAheadReview: () => void;
   onNavigate: (tab: TabKey) => void;
   onSearch: () => void;
 };
@@ -28,10 +30,9 @@ function pickLocalHomeImage(): ImageSourcePropType {
   return heroImages[key] ?? heroImages.warm0;
 }
 
-export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSearch }: Props) {
+export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview, onNavigate, onSearch }: Props) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   // 毛玻璃的模糊目标：整个首页背景（壁纸 + 蒙版）。
   const backgroundRef = React.useRef<View | null>(null);
   const fallbackHomeImage = React.useMemo<ImageSourcePropType>(() => pickLocalHomeImage(), []);
@@ -39,10 +40,8 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
   const [sharingHome, setSharingHome] = React.useState(false);
-  // 「今天推荐」：几张未读新卡，让内容成为 GET 的入口。
+  // 「今天推荐」：从全部卡片中随机挑几张做内容展示；点击进入随机 GET。
   const [recommendedCards, setRecommendedCards] = React.useState<CardRecord[]>([]);
-  // 推荐卡宽度：留出 76px 露出下一张卡的边缘，形成可横滑的暗示。
-  const recommendCardWidth = Math.min(width - 92, 300);
 
   React.useEffect(() => {
     let alive = true;
@@ -114,6 +113,10 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
   const goalOn = stats.goal > 0;
   const goalProgress = goalOn ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
   const goalReached = goalOn && stats.todayGets >= stats.goal;
+  // 今日学习 CTA：未达标 → 去 GET 新卡；达标 → 去复习（提前复习）。
+  const todayCta = goalOn && goalReached
+    ? { label: '去复习', icon: 'repeat' as const, onPress: onStartAheadReview }
+    : { label: '去 GET 新卡', icon: 'flash-outline' as const, onPress: onStartSession };
 
   return (
     <BlurTargetView ref={backgroundRef} style={styles.screen}>
@@ -144,14 +147,6 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
               >
                 <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
               </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="设置"
-                onPress={() => onNavigate('settings')}
-                style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
-              >
-                <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
-              </Pressable>
             </View>
           </View>
           <Pressable
@@ -178,22 +173,25 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
                   </View>
                 ) : null}
               </View>
-              <View style={styles.todayValueRow}>
-                <Text style={[styles.todayValue, { color: theme.ink }]}>{goalOn ? `${goalProgress}%` : stats.todayGets}</Text>
-                {!goalOn ? <Text style={[styles.todayUnit, { color: theme.inkMuted }]}>张已 GET</Text> : null}
-              </View>
-              {goalOn ? (
-                <>
-                  <View style={[styles.goalTrack, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.14)' : 'rgba(23,22,17,0.08)' }]}>
-                    <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
+              <View style={styles.todayMainRow}>
+                <View style={styles.todayValueCol}>
+                  <View style={styles.todayValueRow}>
+                    <Text style={[styles.todayValue, { color: theme.ink }]}>{goalOn ? `${goalProgress}%` : stats.todayGets}</Text>
+                    {!goalOn ? <Text style={[styles.todayUnit, { color: theme.inkMuted }]}>张已 GET</Text> : null}
                   </View>
+                  {goalOn ? (
+                    <View style={[styles.goalTrack, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.14)' : 'rgba(23,22,17,0.08)' }]}>
+                      <View style={[styles.goalFill, { width: `${goalProgress}%`, backgroundColor: goalReached ? '#F2B737' : theme.accent }]} />
+                    </View>
+                  ) : null}
                   <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>
-                    {goalReached ? '今日目标已完成' : `今日目标 ${stats.todayGets}/${stats.goal}`}
+                    {goalOn
+                      ? goalReached ? '今日目标已完成' : `已完成 ${stats.todayGets}/${stats.goal}`
+                      : '可在设置中开启每日目标'}
                   </Text>
-                </>
-              ) : (
-                <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>可在设置中开启每日目标</Text>
-              )}
+                </View>
+                <AppButton label={todayCta.label} icon={todayCta.icon} onPress={todayCta.onPress} style={styles.todayCta} />
+              </View>
               <Text style={[styles.todayMeta, { color: theme.inkMuted }]}>
                 今日 GET {stats.todayGets} · 今日复习 {stats.todayReviews}
               </Text>
@@ -201,7 +199,7 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
             <View style={[styles.panelDivider, { backgroundColor: theme.line }]} />
             <View style={styles.progressRow}>
               <ProgressNum value={`${stats.gotCards}`} label="已 GET" theme={theme} />
-              <ProgressNum value={`${stats.masteredCount}`} label="已掌握" theme={theme} />
+              <ProgressNum value={`${stats.clearCount}`} label="已掌握" theme={theme} />
               <ProgressNum value={`${stats.dueCount}`} label="待复习" theme={theme} />
               <ProgressNum value={`${stats.streakDays}`} label="连续天数" theme={theme} />
             </View>
@@ -235,28 +233,19 @@ export function HomeScreen({ stats, settings, onStartSession, onNavigate, onSear
             <View style={styles.recommendWrap}>
               <View style={styles.sectionHead}>
                 <Text style={styles.sectionLabel}>今天推荐</Text>
-                <Text style={styles.sectionMeta}>从未读卡片里挑了 {recommendedCards.length} 张 · 点击开始 GET</Text>
+                <Text style={styles.sectionMeta}>从全部卡片中随机抽取 · 点击进入随机 GET</Text>
               </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                decelerationRate="fast"
-                snapToInterval={recommendCardWidth + 12}
-                style={styles.recommendCarousel}
-                contentContainerStyle={styles.recommendCarouselInner}
-              >
-                {recommendedCards.map((card) => (
-                  <Pressable
-                    key={card.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`开始 GET：${card.title}`}
-                    onPress={onStartSession}
-                    style={({ pressed }) => [{ width: recommendCardWidth }, pressed && styles.pressed]}
-                  >
-                    <KnowledgeCard compact card={card} settings={settings} />
-                  </Pressable>
-                ))}
-              </ScrollView>
+              {recommendedCards.map((card) => (
+                <Pressable
+                  key={card.id}
+                  accessibilityRole="button"
+                  accessibilityLabel="进入随机 GET"
+                  onPress={onStartSession}
+                  style={({ pressed }) => [pressed && styles.pressed]}
+                >
+                  <KnowledgeCard compact card={card} settings={settings} />
+                </Pressable>
+              ))}
             </View>
           ) : null}
         </ScrollView>
@@ -322,10 +311,13 @@ const styles = StyleSheet.create({
   frostPanel: { borderRadius: 24, overflow: 'hidden' },
   frostInner: { borderRadius: 24, paddingHorizontal: 20, paddingVertical: 16 },
   todayPanel: { gap: 8 },
+  todayMainRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  todayValueCol: { flex: 1, gap: 8 },
+  todayCta: { minHeight: 42, paddingHorizontal: 14 },
   todayHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   panelLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
   todayValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  todayValue: { fontSize: 52, lineHeight: 58, fontWeight: '900', letterSpacing: -1.6 },
+  todayValue: { fontSize: 46, lineHeight: 52, fontWeight: '900', letterSpacing: -1.4 },
   todayUnit: { fontSize: 14, fontWeight: '800' },
   goalTrack: { height: 7, borderRadius: 4, overflow: 'hidden' },
   goalFill: { height: 7, borderRadius: 4 },
@@ -338,9 +330,7 @@ const styles = StyleSheet.create({
   reminderTextWrap: { flex: 1, gap: 2 },
   reminderTitle: { fontSize: 15, fontWeight: '900' },
   reminderMeta: { fontSize: 12, fontWeight: '600' },
-  recommendWrap: { gap: 9 },
-  recommendCarousel: { marginLeft: -16, marginRight: -16 },
-  recommendCarouselInner: { paddingHorizontal: 16, gap: 12, paddingRight: 32 },
+  recommendWrap: { gap: 12 },
   sectionHead: { paddingHorizontal: 4, gap: 2 },
   sectionLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.4, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
   sectionMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
