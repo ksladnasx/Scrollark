@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useColorScheme, View, type ImageSourcePropType } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
 import { FavoritesScreen } from './screens/FavoritesScreen';
@@ -16,6 +16,7 @@ import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
+import { HomeShareOverlay } from './components/HomeShareOverlay';
 import { TabBar } from './components/TabBar';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
@@ -64,6 +65,8 @@ export default function App() {
   // 分享海报挂在 App 主窗口层级渲染：整屏截图只能捕获主窗口，
   // 放进 <Modal>（独立 Dialog 窗口）里的内容截不到。
   const [sharingCard, setSharingCard] = React.useState<CardRecord | null>(null);
+  // 首页数据海报同样挂在 App 层（Tab 栏之后）：保证盖住底部悬浮 Tab 栏。
+  const [sharingHome, setSharingHome] = React.useState<ImageSourcePropType | null>(null);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
 
   const refresh = React.useCallback(async () => {
@@ -263,6 +266,7 @@ export default function App() {
                 onStartAheadReview={() => navigate({ name: 'review', mode: 'ahead' })}
                 onNavigate={(tab) => navigate({ name: 'tabs', tab })}
                 onSearch={() => navigate({ name: 'search' })}
+                onShareHome={setSharingHome}
               />
             ) : (
               <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
@@ -280,6 +284,14 @@ export default function App() {
               card={sharingCard}
               settings={settings}
               onDone={() => setSharingCard(null)}
+            />
+          ) : null}
+          {sharingHome ? (
+            <HomeShareOverlay
+              imageSource={sharingHome}
+              settings={settings}
+              stats={stats}
+              onDone={() => setSharingHome(null)}
             />
           ) : null}
         </View>

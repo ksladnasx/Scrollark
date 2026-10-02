@@ -7,7 +7,6 @@ import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
 import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
 import { getRecommendedCards } from '../data/repository';
-import { HomeShareOverlay } from '../components/HomeShareOverlay';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { AppButton } from '../components/AppButton';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -20,6 +19,8 @@ type Props = {
   onStartAheadReview: () => void;
   onNavigate: (tab: TabKey) => void;
   onSearch: () => void;
+  // 分享首页数据海报：交给 App 层渲染浮层，保证盖在底部 Tab 栏之上。
+  onShareHome: (imageSource: ImageSourcePropType) => void;
 };
 
 const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -30,7 +31,7 @@ function pickLocalHomeImage(): ImageSourcePropType {
   return heroImages[key] ?? heroImages.warm0;
 }
 
-export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview, onNavigate, onSearch }: Props) {
+export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview, onNavigate, onSearch, onShareHome }: Props) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   // 毛玻璃的模糊目标：整个首页背景（壁纸 + 蒙版）。
@@ -39,7 +40,6 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
   const [homeImageUri, setHomeImageUri] = React.useState<string | null>(() => getCachedHomeBackgroundImageUri());
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
-  const [sharingHome, setSharingHome] = React.useState(false);
   // 「今天推荐」：从全部卡片中随机挑几张做内容展示；点击进入随机 GET。
   const [recommendedCards, setRecommendedCards] = React.useState<CardRecord[]>([]);
 
@@ -142,7 +142,7 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="分享首页数据"
-                onPress={() => setSharingHome(true)}
+                onPress={() => onShareHome(homeImage)}
                 style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
               >
                 <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
@@ -249,15 +249,6 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
             </View>
           ) : null}
         </ScrollView>
-
-        {sharingHome ? (
-          <HomeShareOverlay
-            imageSource={homeImage}
-            settings={settings}
-            stats={stats}
-            onDone={() => setSharingHome(false)}
-          />
-        ) : null}
       </ImageBackground>
     </BlurTargetView>
   );

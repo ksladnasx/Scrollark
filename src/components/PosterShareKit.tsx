@@ -71,11 +71,15 @@ export function releasePosterTmp(uri: string | null): void {
 
 type ActionBusy = 'share' | 'save' | null;
 
-// 截图完成后的操作栏：分享给朋友 / 保存到相册 / 关闭。
+// 操作栏的底部间距：分享浮层挂在 App 层、遮罩已盖住悬浮 Tab 栏，
+// 因此只需少量抬升（避开手势区 + 稍微浮在遮罩上方），不必完全避开 Tab 栏高度。
+const TAB_BAR_CLEARANCE = 36;
+
+// 截图完成后的操作栏：分享给朋友 / 保存到相册 / 取消（红色实心，醒目易点）。
 export function PosterShareActions({ busy, onShare, onSave, onClose }: { busy: ActionBusy; onShare: () => void; onSave: () => void; onClose: () => void }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 14) }]}>
+    <View style={[styles.barWrap, { bottom: Math.max(insets.bottom, 14) + TAB_BAR_CLEARANCE }]}>
       <Pressable
         accessibilityRole="button"
         disabled={busy !== null}
@@ -87,7 +91,7 @@ export function PosterShareActions({ busy, onShare, onSave, onClose }: { busy: A
         ) : (
           <Ionicons name="share-social" size={16} color="#171611" />
         )}
-        <Text style={styles.primaryText}>分享给朋友</Text>
+        <Text style={styles.primaryText}>分享</Text>
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -100,10 +104,11 @@ export function PosterShareActions({ busy, onShare, onSave, onClose }: { busy: A
         ) : (
           <Ionicons name="download-outline" size={16} color="#FFFFFF" />
         )}
-        <Text style={styles.secondaryText}>保存到相册</Text>
+        <Text style={styles.secondaryText}>保存</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" disabled={busy !== null} onPress={onClose} style={({ pressed }) => [styles.closeButton, pressed && busy === null && styles.pressed]}>
-        <Ionicons name="close" size={18} color="rgba(255,255,255,0.85)" />
+      <Pressable accessibilityRole="button" disabled={busy !== null} onPress={onClose} style={({ pressed }) => [styles.cancelButton, pressed && busy === null && styles.pressed]}>
+        <Ionicons name="close" size={15} color="#FFFFFF" />
+        <Text style={styles.cancelText}>取消</Text>
       </Pressable>
     </View>
   );
@@ -127,7 +132,8 @@ const styles = StyleSheet.create({
   primaryText: { color: '#171611', fontSize: 14, fontWeight: '900' },
   secondaryButton: { flex: 1, height: 44, borderRadius: radius.pill, borderWidth: 1, borderColor: 'rgba(255,255,255,0.32)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   secondaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  closeButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  cancelButton: { flex: 1, height: 44, borderRadius: radius.pill, backgroundColor: '#C0564A', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  cancelText: { color: '#FFFFFF', fontSize: 14, fontWeight: '900' },
   pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
 });
 
