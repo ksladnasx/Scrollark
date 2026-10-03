@@ -13,6 +13,8 @@ import { palette, radius } from '../theme/tokens';
 
 type Props = {
   settings: Settings;
+  // 从首页推荐卡点进来时固定排在流开头的卡片 id；普通入口不传，纯随机抽卡。
+  startCardId?: number;
   onClose: () => void;
   onChanged: () => void;
   onEnd: (summary: SessionSummary) => void;
@@ -67,7 +69,7 @@ function HeartPop({ pop, topOffset, onDone }: { pop: HeartPopItem; topOffset: nu
   );
 }
 
-export function SessionScreen({ settings, onClose, onChanged, onEnd, onStartReview }: Props) {
+export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd, onStartReview }: Props) {
   const theme = useAppTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -106,12 +108,12 @@ export function SessionScreen({ settings, onClose, onChanged, onEnd, onStartRevi
   const load = React.useCallback(async () => {
     setLoading(true);
     finishedRef.current = false;
-    const next = await buildSessionCards(settings.sessionCardCount);
+    const next = await buildSessionCards(settings.sessionCardCount, startCardId);
     setCards(next);
     setIndex(0);
     setLoading(false);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
-  }, [settings.sessionCardCount]);
+  }, [settings.sessionCardCount, startCardId]);
 
   React.useEffect(() => { void load(); }, [load]);
 

@@ -1,7 +1,7 @@
 export type TabKey = 'home' | 'review' | 'stats' | 'knowledge' | 'favorites' | 'settings';
 export type CardHeaderImageMode = 'local' | 'remote' | 'hidden';
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session' } | { name: 'review'; mode?: 'due' | 'ahead' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' };
+export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session'; startCardId?: number } | { name: 'review'; mode?: 'due' | 'ahead' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' };
 
 // get 时的自评等级：1 = 忘了，2 = 模糊，3 = 秒懂。评级驱动复习间隔进退。
 export type MasteryRating = 1 | 2 | 3;

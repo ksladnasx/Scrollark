@@ -17,6 +17,7 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { HomeShareOverlay } from './components/HomeShareOverlay';
+import { StatsShareOverlay } from './components/StatsShareOverlay';
 import { TabBar } from './components/TabBar';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
@@ -67,6 +68,8 @@ export default function App() {
   const [sharingCard, setSharingCard] = React.useState<CardRecord | null>(null);
   // 首页数据海报同样挂在 App 层（Tab 栏之后）：保证盖住底部悬浮 Tab 栏。
   const [sharingHome, setSharingHome] = React.useState<ImageSourcePropType | null>(null);
+  // 「我的」页学习档案海报：内容不含壁纸图源，只挂浮层即可。
+  const [sharingStats, setSharingStats] = React.useState(false);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
 
   const refresh = React.useCallback(async () => {
@@ -207,6 +210,7 @@ export default function App() {
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <SessionScreen
             settings={settings}
+            startCardId={route.startCardId}
             onClose={() => { void refresh(); goBack(); }}
             onChanged={refreshSoon}
             onEnd={(summary) => { void refresh(); replace({ name: 'sessionEnd', summary }); }}
@@ -262,7 +266,7 @@ export default function App() {
               <HomeScreen
                 stats={stats}
                 settings={settings}
-                onStartSession={() => navigate({ name: 'session' })}
+                onStartSession={(startCardId) => navigate({ name: 'session', startCardId })}
                 onStartAheadReview={() => navigate({ name: 'review', mode: 'ahead' })}
                 onNavigate={(tab) => navigate({ name: 'tabs', tab })}
                 onSearch={() => navigate({ name: 'search' })}
@@ -272,7 +276,7 @@ export default function App() {
               <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
                 <PageHeader tab={activeTab} onBack={goBack} />
                 <View style={styles.pageBody}>
-                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, navigate, goHome, refresh, setSettings, onShare: setSharingCard })}
+                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, navigate, goHome, refresh, setSettings, onShare: setSharingCard, onShareStats: () => setSharingStats(true) })}
                 </View>
               </SafeAreaView>
             )}
@@ -292,6 +296,13 @@ export default function App() {
               settings={settings}
               stats={stats}
               onDone={() => setSharingHome(null)}
+            />
+          ) : null}
+          {sharingStats ? (
+            <StatsShareOverlay
+              settings={settings}
+              stats={stats}
+              onDone={() => setSharingStats(false)}
             />
           ) : null}
         </View>
@@ -332,6 +343,7 @@ function renderPage(
     refresh: () => Promise<void>;
     setSettings: React.Dispatch<React.SetStateAction<Settings>>;
     onShare: (card: CardRecord) => void;
+    onShareStats: () => void;
   },
 ) {
   switch (tab) {
@@ -343,6 +355,8 @@ function renderPage(
           onStartReview={() => data.navigate({ name: 'review' })}
           onStartAheadReview={() => data.navigate({ name: 'review', mode: 'ahead' })}
           onStartGet={() => data.navigate({ name: 'session' })}
+          onShare={data.onShare}
+          onDataChanged={() => { void data.refresh(); }}
         />
       );
     case 'knowledge':
@@ -359,7 +373,7 @@ function renderPage(
     case 'favorites':
       return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
-      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} />;
+      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} onShareStats={data.onShareStats} />;
     case 'settings':
       return (
         <SettingsScreen

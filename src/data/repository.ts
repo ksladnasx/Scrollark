@@ -365,9 +365,24 @@ export async function searchCards(query: string, limit = 50): Promise<CardRecord
   );
 }
 
-export async function buildSessionCards(limit: number) {
+export async function buildSessionCards(limit: number, startCardId?: number) {
   const db = await getDb();
-  // GET 流程只出新卡：已 get 的卡一律交给复习流程（按到期时间回流）。
+  // 从首页推荐卡点进来时，点中的那张固定排在流的开头（无论是否已 get），
+  // 其余位置仍从 isGot = 0 的未读池随机补齐；GET 流程本身只出新卡。
+  if (startCardId != null) {
+    const start = await db.getFirstAsync<CardRecord>(`${cardSelect} WHERE cards.id = ?`, startCardId);
+    if (start) {
+      const rest = await db.getAllAsync<CardRecord>(
+        `${cardSelect}
+         WHERE cards.isGot = 0 AND cards.id != ?
+         ORDER BY RANDOM()
+         LIMIT ?`,
+        startCardId,
+        Math.max(0, limit - 1),
+      );
+      return [start, ...rest];
+    }
+  }
   const rows = await db.getAllAsync<CardRecord>(
     `${cardSelect}
      WHERE cards.isGot = 0
@@ -410,11 +425,163 @@ export async function buildAheadReviewCards(limit = 30) {
   );
 }
 
-// 首页「今天推荐」：从全部卡片中随机挑几张做内容展示（含已 GET 的卡）。
-// 点击推荐卡的行为仍是随机 GET：从 isGot = 0 的未读池里抽取。
-export async function getRecommendedCards(limit = 3): Promise<CardRecord[]> {
+// ===== 复习 Tab 下钻：按「最近一次反馈」状态筛选卡片 =====
+// 状态口径与复习 Tab 四状态仪表一致（见 buildReviewCards / getStatistics 的划分）。
+
+export type ReviewStatusFilter = 'recent' | 'fuzzy' | 'clear' | 'forgot';
+
+const REVIEW_STATUS_CONDITIONS: Record<ReviewStatusFilter, string> = {
+  recent: 'cards.isGot = 1 AND cards.mastery IS NULL',
+  fuzzy: 'cards.mastery = 2',
+  clear: 'cards.mastery = 3',
+  forgot: 'cards.mastery = 1',
+};
+
+export async function listCardsByStatus(status: ReviewStatusFilter, limit = 200): Promise<CardRecord[]> {
   const db = await getDb();
-  return db.getAllAsync<CardRecord>(`${cardSelect} ORDER BY RANDOM() LIMIT ?`, limit);
+  return db.getAllAsync<CardRecord>(
+    `${cardSelect}
+     WHERE ${REVIEW_STATUS_CONDITIONS[status]}
+     ORDER BY cards.lastGotAt DESC, cards.sortOrder ASC
+     LIMIT ?`,
+    limit,
+  );
+}
+
+// 未来 N 天到期预览：按本地日分桶统计尚未到期卡片的 nextReviewAt
+// （起点是「现在」，今天已到期的归入今日待复习 dueCount，不在这里重复计）。
+export async function getUpcomingReviewCounts(days = 7): Promise<{ date: string; count: number }[]> {
+  const db = await getDb();
+  const today = startOfLocalDay();
+  const rangeEnd = new Date(today);
+  rangeEnd.setDate(today.getDate() + days + 1);
+  const rows = await db.getAllAsync<{ nextReviewAt: string }>(
+    'SELECT nextReviewAt FROM cards WHERE isGot = 1 AND nextReviewAt > ? AND nextReviewAt < ?',
+    nowIso(),
+    rangeEnd.toISOString(),
+  );
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const stamped = new Date(row.nextReviewAt);
+    if (Number.isNaN(stamped.getTime())) continue;
+    const key = localDayKey(stamped);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const result: { date: string; count: number }[] = [];
+  for (let i = 1; i <= days; i += 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() + i);
+    result.push({ date: localDayKey(day), count: counts.get(localDayKey(day)) ?? 0 });
+  }
+  return result;
+}
+
+// ===== 周对比（我的 Tab）：近 7 天 vs 上一个 7 天的学习行为 =====
+// 数据源与打卡热力图一致（events 表的 get / rate-* 事件），打卡天数 = 当日 get 数 ≥ 目标。
+
+export type WeeklyComparison = {
+  thisGets: number;
+  lastGets: number;
+  thisReviews: number;
+  lastReviews: number;
+  thisHits: number;
+  lastHits: number;
+};
+
+export async function getWeeklyComparison(goal: number): Promise<WeeklyComparison> {
+  const db = await getDb();
+  const todayStart = startOfLocalDay();
+  const windowStart = new Date(todayStart);
+  windowStart.setDate(todayStart.getDate() - 13);
+  const rows = await db.getAllAsync<{ type: string; createdAt: string }>(
+    "SELECT type, createdAt FROM events WHERE createdAt >= ? AND (type = 'get' OR type LIKE 'rate-%')",
+    windowStart.toISOString(),
+  );
+
+  // 按本地日 × 行为类型计数，再分别汇总两个 7 天窗口（本周含今天，上周是其前 7 天）。
+  const perDay = new Map<string, { gets: number; reviews: number }>();
+  for (const row of rows) {
+    const stamped = new Date(row.createdAt);
+    if (Number.isNaN(stamped.getTime())) continue;
+    const key = localDayKey(stamped);
+    const bucket = perDay.get(key) ?? { gets: 0, reviews: 0 };
+    if (row.type === 'get') bucket.gets += 1;
+    else bucket.reviews += 1;
+    perDay.set(key, bucket);
+  }
+
+  const summarize = (offsetDays: number, length: number) => {
+    let gets = 0;
+    let reviews = 0;
+    let hits = 0;
+    for (let i = 0; i < length; i += 1) {
+      const day = new Date(todayStart);
+      day.setDate(todayStart.getDate() - offsetDays - i);
+      const bucket = perDay.get(localDayKey(day));
+      if (!bucket) continue;
+      gets += bucket.gets;
+      reviews += bucket.reviews;
+      if (goal > 0 && bucket.gets >= goal) hits += 1;
+    }
+    return { gets, reviews, hits };
+  };
+
+  const current = summarize(0, 7);
+  const previous = summarize(7, 7);
+  return {
+    thisGets: current.gets,
+    lastGets: previous.gets,
+    thisReviews: current.reviews,
+    lastReviews: previous.reviews,
+    thisHits: current.hits,
+    lastHits: previous.hits,
+  };
+}
+
+// 首页「今天推荐」：从全部卡片中随机挑几张做内容展示（含已 GET 的卡），
+// 点击推荐卡会以该卡为起点进入 GET 流。推荐位一天只换一批：
+// 首次访问时随机抽取并把卡片 id 存进 settings，之后整天返回同一批，
+// 切页返回、重开应用都不重抽；点首页的刷新按钮才手动换一批。
+function readStoredIdList(raw: string | undefined): number[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is number => typeof id === 'number' && Number.isFinite(id));
+  } catch {
+    return [];
+  }
+}
+
+async function pickDailyRecommendations(db: SQLite.SQLiteDatabase, limit: number, day: string): Promise<CardRecord[]> {
+  const cards = await db.getAllAsync<CardRecord>(`${cardSelect} ORDER BY RANDOM() LIMIT ?`, limit);
+  await db.runAsync("INSERT OR REPLACE INTO settings(key, value) VALUES ('dailyRecoDate', ?)", day);
+  await db.runAsync("INSERT OR REPLACE INTO settings(key, value) VALUES ('dailyRecoIds', ?)", JSON.stringify(cards.map((card) => card.id)));
+  return cards;
+}
+
+export async function getDailyRecommendedCards(limit = 3): Promise<CardRecord[]> {
+  const db = await getDb();
+  const today = localDayKey(new Date());
+  const rows = await db.getAllAsync<SettingRow>("SELECT key, value FROM settings WHERE key IN ('dailyRecoDate', 'dailyRecoIds')");
+  const storedDate = rows.find((row) => row.key === 'dailyRecoDate')?.value;
+  const storedIds = readStoredIdList(rows.find((row) => row.key === 'dailyRecoIds')?.value);
+  if (storedDate === today && storedIds.length > 0) {
+    const placeholders = storedIds.map(() => '?').join(', ');
+    const cards = await db.getAllAsync<CardRecord>(`${cardSelect} WHERE cards.id IN (${placeholders})`, storedIds);
+    // 记录里可能有被删除的卡片：还有剩余就按记录顺序返回，全被删光才重抽。
+    if (cards.length > 0) {
+      const byId = new Map(cards.map((card) => [card.id, card]));
+      return storedIds.map((id) => byId.get(id)).filter((card): card is CardRecord => Boolean(card));
+    }
+  }
+  return pickDailyRecommendations(db, limit, today);
+}
+
+// 刷新按钮：立刻重抽一批并覆盖今天的推荐记录。
+export async function refreshDailyRecommendedCards(limit = 3): Promise<CardRecord[]> {
+  const db = await getDb();
+  return pickDailyRecommendations(db, limit, localDayKey(new Date()));
 }
 
 // 简化版间隔重复：reviewStage 对应间隔档位（天）。

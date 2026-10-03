@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { captureRef, captureScreen, releaseCapture } from 'react-native-view-shot';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius } from '../theme/tokens';
+import { saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 export const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -138,3 +139,90 @@ const styles = StyleSheet.create({
 });
 
 export type { ActionBusy };
+
+const CAPTURE_SETTLE_TIMEOUT_MS = 3000;
+
+// 海报分享通用流程：等 settle（布局 / 背景图就绪）→ 截图 → 操作栏（分享 / 保存 / 取消）。
+// settle 由调用方用 Promise.all([...]) 组出（必须用 useMemo 保持引用稳定）；3 秒超时兜底直接截图。
+export function usePosterShare(options: { title: string; saveDirectory: string; onDone: () => void; settle: Promise<unknown> }) {
+  const { title, saveDirectory, onDone, settle } = options;
+  const [capturedUri, setCapturedUri] = React.useState<string | null>(null);
+  const [actionBusy, setActionBusy] = React.useState<ActionBusy>(null);
+  const capturedUriRef = React.useRef<string | null>(null);
+  const onDoneRef = React.useRef(onDone);
+  React.useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+  const { targetRef, capture, kickStyle } = usePosterCapture();
+
+  const releaseCaptured = React.useCallback(() => {
+    releasePosterTmp(capturedUriRef.current);
+    capturedUriRef.current = null;
+  }, []);
+
+  const handleClose = React.useCallback(() => {
+    releaseCaptured();
+    onDoneRef.current();
+  }, [releaseCaptured]);
+
+  const handleShare = React.useCallback(async () => {
+    const uri = capturedUriRef.current;
+    if (!uri || actionBusy) return;
+    setActionBusy('share');
+    try {
+      await sharePosterFile(uri, title);
+      releaseCaptured();
+      onDoneRef.current();
+    } catch (error) {
+      Alert.alert('分享失败', error instanceof Error ? error.message : '请稍后再试');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [actionBusy, releaseCaptured, title]);
+
+  const handleSave = React.useCallback(async () => {
+    const uri = capturedUriRef.current;
+    if (!uri || actionBusy) return;
+    setActionBusy('save');
+    try {
+      // 与首页壁纸下载共用同一条保存路径（自选目录 / 系统相册），不额外申请权限。
+      const savedUri = await saveHomeBackgroundImageToDirectory(uri, saveDirectory);
+      releaseCaptured();
+      onDoneRef.current();
+      Alert.alert('已保存', `分享图已保存到：\n${savedUri}`);
+    } catch (error) {
+      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后再试');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [actionBusy, releaseCaptured, saveDirectory]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        await nextFrame();
+        await Promise.race([settle, sleep(CAPTURE_SETTLE_TIMEOUT_MS)]);
+        await sleep(80);
+        if (cancelled) return;
+        const uri = await capture({ screenFallback: false });
+        capturedUriRef.current = uri;
+        if (cancelled) return;
+        if (!uri) {
+          Alert.alert('生成分享图失败', '请稍后再试。');
+          onDoneRef.current();
+          return;
+        }
+        setCapturedUri(uri);
+      } catch (error) {
+        Alert.alert('生成分享图失败', error instanceof Error ? error.message : '请稍后再试');
+        onDoneRef.current();
+      }
+    })();
+    return () => {
+      cancelled = true;
+      releasePosterTmp(capturedUriRef.current);
+      capturedUriRef.current = null;
+    };
+  }, [capture, settle]);
+
+  return { targetRef, kickStyle, capturedUri, actionBusy, handleShare, handleSave, handleClose };
+}

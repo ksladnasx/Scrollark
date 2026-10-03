@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import type { Statistics } from '../domain/types';
-import { getDailyActivity } from '../data/repository';
+import { getDailyActivity, getWeeklyComparison, type WeeklyComparison } from '../data/repository';
 import { useAppTheme } from '../theme/ThemeContext';
 import { masteryColors, palette, radius } from '../theme/tokens';
 
@@ -113,7 +113,78 @@ function HeatmapCard() {
 // 掌握程度分布的四段配色：未读为中性色，其余对应复习状态色。
 const newRecentColor = '#526B78';
 
-export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics; onOpenFavorites: () => void }) {
+// 学习对比：近 7 天 vs 上一个 7 天的 GET / 复习 / 打卡天数（数据源与热力图一致）。
+function WeeklyCard({ goal }: { goal: number }) {
+  const theme = useAppTheme();
+  const [comparison, setComparison] = React.useState<WeeklyComparison | null>(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    getWeeklyComparison(goal)
+      .then((next) => {
+        if (alive) setComparison(next);
+      })
+      .catch(() => {
+        if (alive) setComparison(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [goal]);
+
+  const rows: { label: string; unit: string; current: number; previous: number }[] = comparison
+    ? [
+        { label: 'GET 卡片', unit: '张', current: comparison.thisGets, previous: comparison.lastGets },
+        { label: '复习评级', unit: '次', current: comparison.thisReviews, previous: comparison.lastReviews },
+        ...(goal > 0 ? [{ label: '目标打卡', unit: '天', current: comparison.thisHits, previous: comparison.lastHits }] : []),
+      ]
+    : [];
+
+  return (
+    <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+      <View style={styles.goalHead}>
+        <Text style={[styles.goalTitle, { color: theme.ink }]}>学习对比</Text>
+        <Text style={[styles.weekHeadMeta, { color: theme.inkMuted }]}>近 7 天 vs 上一个 7 天</Text>
+      </View>
+      {comparison === null ? (
+        <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>正在统计…</Text>
+      ) : (
+        rows.map((row, index) => {
+          const diff = row.current - row.previous;
+          const deltaColor = diff > 0 ? masteryColors[3] : diff < 0 ? theme.red : theme.inkMuted;
+          return (
+            <View
+              key={row.label}
+              style={[
+                styles.weekRow,
+                index < rows.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.line, paddingBottom: 12 },
+              ]}
+            >
+              <Text style={[styles.weekLabel, { color: theme.inkMuted }]}>{row.label}</Text>
+              <View style={styles.weekValueWrap}>
+                <Text style={[styles.weekValue, { color: theme.ink }]}>{row.current}</Text>
+                <Text style={[styles.weekUnit, { color: theme.inkMuted }]}> {row.unit}</Text>
+              </View>
+              <View style={styles.weekDeltaWrap}>
+                {diff !== 0 ? (
+                  <View style={styles.weekDeltaRow}>
+                    <Ionicons name={diff > 0 ? 'arrow-up' : 'arrow-down'} size={12} color={deltaColor} />
+                    <Text style={[styles.weekDeltaText, { color: deltaColor }]}>{Math.abs(diff)}</Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.weekDeltaText, { color: theme.inkMuted }]}>持平</Text>
+                )}
+                <Text style={[styles.weekLast, { color: theme.inkMuted }]}>上周 {row.previous}</Text>
+              </View>
+            </View>
+          );
+        })
+      )}
+    </View>
+  );
+}
+
+export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { stats: Statistics; onOpenFavorites: () => void; onShareStats: () => void }) {
   const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
@@ -149,6 +220,14 @@ export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics
 
       {/* 吸收概览：背景与文字随明暗模式取同向色（浅色模式浅卡片、深色模式深卡片） */}
       <View style={[styles.heroStat, { backgroundColor: theme.accentSoft }] }>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="分享学习档案"
+          onPress={onShareStats}
+          style={({ pressed }) => [styles.heroShareButton, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.16)' : 'rgba(23,22,17,0.08)' }, pressed && styles.pressed]}
+        >
+          <Ionicons name="share-social-outline" size={16} color={theme.ink} />
+        </Pressable>
         <Text style={[styles.heroValue, { color: theme.ink }]}>{stats.gotCards}</Text>
         <Text style={[styles.heroLabel, { color: theme.ink }]}>总吸收卡片</Text>
         <View style={[styles.progressTrack, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]}>
@@ -238,6 +317,8 @@ export function StatisticsScreen({ stats, onOpenFavorites }: { stats: Statistics
           <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>未设置每日目标，可在 设置 → 阅读节奏 中开启。</Text>
         )}
       </View>
+
+      <WeeklyCard goal={stats.goal} />
 
       <HeatmapCard />
 
@@ -350,6 +431,17 @@ const styles = StyleSheet.create({
   goalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F2B737', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   goalBadgeText: { color: '#5D4218', fontSize: 12, fontWeight: '900' },
   goalMeta: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
+  heroShareButton: { position: 'absolute', top: 16, right: 16, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  weekHeadMeta: { fontSize: 11, fontWeight: '700' },
+  weekRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
+  weekLabel: { flex: 1, fontSize: 13, fontWeight: '700' },
+  weekValueWrap: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'flex-end', minWidth: 62 },
+  weekValue: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  weekUnit: { fontSize: 12, fontWeight: '700' },
+  weekDeltaWrap: { width: 84, alignItems: 'flex-end', gap: 2 },
+  weekDeltaRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  weekDeltaText: { fontSize: 12, fontWeight: '800' },
+  weekLast: { fontSize: 10, fontWeight: '700' },
   sectionTitle: { color: palette.ink, fontSize: 17, fontWeight: '900' },
   lineChart: { gap: 10 },
   linePlot: { position: 'relative', width: '100%' },

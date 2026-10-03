@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
-import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { Alert, ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
 import { getDailyHomeBackgroundImageUri, getCachedHomeBackgroundImageUri, saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
-import { getRecommendedCards } from '../data/repository';
+import { getDailyRecommendedCards, refreshDailyRecommendedCards } from '../data/repository';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { AppButton } from '../components/AppButton';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -15,7 +15,8 @@ import { radius, type AppTheme } from '../theme/tokens';
 type Props = {
   stats: Statistics;
   settings: Settings;
-  onStartSession: () => void;
+  // 传卡片 id：以该推荐卡为起点进入 GET 流；不传（今日学习 CTA 等）则纯随机抽卡。
+  onStartSession: (startCardId?: number) => void;
   onStartAheadReview: () => void;
   onNavigate: (tab: TabKey) => void;
   onSearch: () => void;
@@ -40,8 +41,10 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
   const [homeImageUri, setHomeImageUri] = React.useState<string | null>(() => getCachedHomeBackgroundImageUri());
   const [homeImage, setHomeImage] = React.useState<ImageSourcePropType>(homeImageUri ? { uri: homeImageUri } : fallbackHomeImage);
   const [downloadBusy, setDownloadBusy] = React.useState(false);
-  // 「今天推荐」：从全部卡片中随机挑几张做内容展示；点击进入随机 GET。
+  // 「今天推荐」一天一批：当天首次进入随机抽取并记录在库，切页返回 / 重开应用都不换，
+  // 点推荐区标题旁的刷新按钮才手动换一批。点击推荐卡以该卡为起点进入 GET 流。
   const [recommendedCards, setRecommendedCards] = React.useState<CardRecord[]>([]);
+  const [recoRefreshing, setRecoRefreshing] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -63,10 +66,10 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
     };
   }, [fallbackHomeImage, settings.homeBackgroundImageUrl]);
 
-  // 随着卡片被 GET / 导入，推荐位自动换下一批。
+  // 推荐位按天持久化：这里重复拉取只是自愈（记录的卡全被删光时库层会重抽），返回的仍是当天那批。
   React.useEffect(() => {
     let alive = true;
-    getRecommendedCards(3)
+    getDailyRecommendedCards(3)
       .then((cards) => {
         if (alive) setRecommendedCards(cards);
       })
@@ -77,6 +80,20 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
       alive = false;
     };
   }, [stats.gotCards, stats.totalCards]);
+
+  // 刷新按钮：立刻重抽一批并覆盖今天的推荐记录。
+  const refreshRecommendations = React.useCallback(async () => {
+    if (recoRefreshing) return;
+    try {
+      setRecoRefreshing(true);
+      const cards = await refreshDailyRecommendedCards(3);
+      setRecommendedCards(cards);
+    } catch {
+      // 刷新失败时保留当前推荐，不打断浏览。
+    } finally {
+      setRecoRefreshing(false);
+    }
+  }, [recoRefreshing]);
 
   const downloadBackground = React.useCallback(async () => {
     if (downloadBusy) return;
@@ -114,9 +131,10 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
   const goalProgress = goalOn ? Math.min(100, Math.round((stats.todayGets / stats.goal) * 100)) : 0;
   const goalReached = goalOn && stats.todayGets >= stats.goal;
   // 今日学习 CTA：未达标 → 去 GET 新卡；达标 → 去复习（提前复习）。
+  // AppButton 会把点击事件传给 onPress，必须包一层，避免事件对象被当成 startCardId。
   const todayCta = goalOn && goalReached
-    ? { label: '去复习', icon: 'repeat' as const, onPress: onStartAheadReview }
-    : { label: '去 GET 新卡', icon: 'flash-outline' as const, onPress: onStartSession };
+    ? { label: '去复习', icon: 'repeat' as const, onPress: () => onStartSession() }
+    : { label: '去 GET 新卡', icon: 'flash-outline' as const, onPress: () => onStartSession() };
 
   return (
     <BlurTargetView ref={backgroundRef} style={styles.screen}>
@@ -232,15 +250,30 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
           {recommendedCards.length > 0 ? (
             <View style={styles.recommendWrap}>
               <View style={styles.sectionHead}>
-                <Text style={styles.sectionLabel}>今天推荐</Text>
-                <Text style={styles.sectionMeta}>从全部卡片中随机抽取 · 点击进入随机 GET</Text>
+                <View style={styles.sectionHeadRow}>
+                  <View style={styles.sectionHeadText}>
+                    <Text style={styles.sectionLabel}>今天推荐</Text>
+                    <Text style={styles.sectionMeta}>每天更新一次 · 点击卡片从它开始 GET</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="换一批推荐"
+                    onPress={() => { void refreshRecommendations(); }}
+                    disabled={recoRefreshing}
+                    style={({ pressed }) => [styles.recoRefreshButton, pressed && styles.pressed]}
+                  >
+                    {recoRefreshing
+                      ? <ActivityIndicator size={16} color="rgba(255,255,255,0.85)" />
+                      : <Ionicons name="refresh" size={17} color="rgba(255,255,255,0.85)" />}
+                  </Pressable>
+                </View>
               </View>
               {recommendedCards.map((card) => (
                 <Pressable
                   key={card.id}
                   accessibilityRole="button"
-                  accessibilityLabel="进入随机 GET"
-                  onPress={onStartSession}
+                  accessibilityLabel="从这张卡片开始 GET"
+                  onPress={() => onStartSession(card.id)}
                   style={({ pressed }) => [pressed && styles.pressed]}
                 >
                   <KnowledgeCard compact card={card} settings={settings} />
@@ -322,7 +355,10 @@ const styles = StyleSheet.create({
   reminderTitle: { fontSize: 15, fontWeight: '900' },
   reminderMeta: { fontSize: 12, fontWeight: '600' },
   recommendWrap: { gap: 12 },
-  sectionHead: { paddingHorizontal: 4, gap: 2 },
+  sectionHead: { paddingHorizontal: 4 },
+  sectionHeadRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sectionHeadText: { flex: 1, gap: 2 },
+  recoRefreshButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,20,20,0.28)' },
   sectionLabel: { color: '#FFFFFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.4, textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
   sectionMeta: { color: 'rgba(255,255,255,0.68)', fontSize: 11, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.4)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
   progressRow: { flexDirection: 'row' },

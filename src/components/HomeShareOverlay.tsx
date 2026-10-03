@@ -1,17 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Alert, Image, ImageBackground, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { Image, ImageBackground, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
-import {
-  nextFrame,
-  PosterShareActions,
-  releasePosterTmp,
-  sharePosterFile,
-  sleep,
-  usePosterCapture,
-  type ActionBusy,
-} from './PosterShareKit';
-import { saveHomeBackgroundImageToDirectory } from '../utils/homeBackground';
+import { PosterShareActions, usePosterShare } from './PosterShareKit';
 import { softIcon } from '../theme/assets';
 import type { Settings, Statistics } from '../domain/types';
 
@@ -21,8 +12,6 @@ type Props = {
   stats: Statistics;
   onDone: () => void;
 };
-
-const CAPTURE_SETTLE_TIMEOUT_MS = 3000;
 
 // 主数据区几何参数：左侧数字标签 + 引导线 + 右侧环形扇形图，同一行横向排布。
 // 扇区以「已吸收占比」为中心对称地锚定在圆的左侧（180°），
@@ -34,22 +23,19 @@ const DONUT_STROKE = 13;
 const LABEL_W = 118;
 
 // 首页数据分享海报：当前壁纸做背景，展示今日 get、阅读统计与打卡状态，
-// 截图后弹出操作栏（分享给朋友 / 保存到相册）。
+// 截图后弹出操作栏（分享给朋友 / 保存到相册）。截图与分享流程见 PosterShareKit.usePosterShare。
 export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props) {
   const { width } = useWindowDimensions();
-  const [capturedUri, setCapturedUri] = React.useState<string | null>(null);
-  const [actionBusy, setActionBusy] = React.useState<ActionBusy>(null);
   const imageResolveRef = React.useRef<(() => void) | null>(null);
   const settleResolveRef = React.useRef<(() => void) | null>(null);
-  const capturedUriRef = React.useRef<string | null>(null);
-  const onDoneRef = React.useRef(onDone);
-  React.useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
-  const { targetRef, capture, kickStyle } = usePosterCapture();
   const fontFamily = settings.fontFamily;
 
   // 首次渲染即创建等待的 Promise：布局与壁纸加载可能早于 effect 执行。
   const imageReady = React.useMemo(() => new Promise<void>((resolve) => { imageResolveRef.current = resolve; }), []);
   const layoutDone = React.useMemo(() => new Promise<void>((resolve) => { settleResolveRef.current = resolve; }), []);
+  const settle = React.useMemo(() => Promise.all([imageReady, layoutDone]), [imageReady, layoutDone]);
+
+  const share = usePosterShare({ title: '分享我的阅读数据', saveDirectory: settings.homeBackgroundDownloadDirectory, onDone, settle });
 
   const today = React.useMemo(() => {
     const date = new Date();
@@ -79,81 +65,9 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
     imageResolveRef.current?.();
   }, []);
 
-  const releaseCaptured = React.useCallback(() => {
-    releasePosterTmp(capturedUriRef.current);
-    capturedUriRef.current = null;
-  }, []);
-
-  const handleClose = React.useCallback(() => {
-    releaseCaptured();
-    onDoneRef.current();
-  }, [releaseCaptured]);
-
-  const handleShare = React.useCallback(async () => {
-    const uri = capturedUriRef.current;
-    if (!uri || actionBusy) return;
-    setActionBusy('share');
-    try {
-      await sharePosterFile(uri, '分享我的阅读数据');
-      releaseCaptured();
-      onDoneRef.current();
-    } catch (error) {
-      Alert.alert('分享失败', error instanceof Error ? error.message : '请稍后再试');
-    } finally {
-      setActionBusy(null);
-    }
-  }, [actionBusy, releaseCaptured]);
-
-  const handleSave = React.useCallback(async () => {
-    const uri = capturedUriRef.current;
-    if (!uri || actionBusy) return;
-    setActionBusy('save');
-    try {
-      // 与首页壁纸下载共用同一条保存路径（自选目录 / 系统相册），不额外申请权限。
-      const savedUri = await saveHomeBackgroundImageToDirectory(uri, settings.homeBackgroundDownloadDirectory);
-      releaseCaptured();
-      onDoneRef.current();
-      Alert.alert('已保存', `分享图已保存到：\n${savedUri}`);
-    } catch (error) {
-      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后再试');
-    } finally {
-      setActionBusy(null);
-    }
-  }, [actionBusy, releaseCaptured, settings.homeBackgroundDownloadDirectory]);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        await nextFrame();
-        // 等海报完成布局、壁纸解码上屏（3 秒超时兜底）后再截图。
-        await Promise.race([Promise.all([imageReady, layoutDone]), sleep(CAPTURE_SETTLE_TIMEOUT_MS)]);
-        await sleep(80);
-        if (cancelled) return;
-        const uri = await capture({ screenFallback: false });
-        capturedUriRef.current = uri;
-        if (cancelled) return;
-        if (!uri) {
-          Alert.alert('生成分享图失败', '请稍后再试。');
-          onDoneRef.current();
-          return;
-        }
-        setCapturedUri(uri);
-      } catch (error) {
-        Alert.alert('生成分享图失败', error instanceof Error ? error.message : '请稍后再试');
-        onDoneRef.current();
-      }
-    })();
-    return () => {
-      cancelled = true;
-      releasePosterTmp(capturedUriRef.current);
-      capturedUriRef.current = null;
-    };
-  }, [capture, imageReady, layoutDone]);
-
   return (
-    <View style={[styles.overlay, kickStyle]}>
-      <View ref={targetRef} collapsable={false} onLayout={handlePosterLayout} style={[styles.poster, { width }]}>
+    <View style={[styles.overlay, share.kickStyle]}>
+      <View ref={share.targetRef} collapsable={false} onLayout={handlePosterLayout} style={[styles.poster, { width }]}>
         <ImageBackground source={imageSource} style={styles.posterBg} imageStyle={styles.posterImage} onLoadEnd={handleImageLoaded}>
           <View style={styles.scrim} />
           <View style={styles.content}>
@@ -239,12 +153,12 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
         </ImageBackground>
       </View>
 
-      {capturedUri ? (
+      {share.capturedUri ? (
         <PosterShareActions
-          busy={actionBusy}
-          onShare={() => { void handleShare(); }}
-          onSave={() => { void handleSave(); }}
-          onClose={handleClose}
+          busy={share.actionBusy}
+          onShare={() => { void share.handleShare(); }}
+          onSave={() => { void share.handleSave(); }}
+          onClose={share.handleClose}
         />
       ) : null}
     </View>
