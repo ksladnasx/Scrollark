@@ -3,6 +3,7 @@ import React from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
+import { AppButton } from '../components/AppButton';
 import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { RingProgress } from '../components/RingProgress';
@@ -111,23 +112,33 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
       <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
         <View style={[styles.heroCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-          <Text style={[styles.heroLabel, { color: theme.inkMuted, fontFamily }]}>今日复习进度</Text>
-          <RingProgress size={150} strokeWidth={13} progress={total > 0 ? done / total : 0} color={ringColor} trackColor={theme.paperSoft}>
+          <RingProgress size={104} strokeWidth={10} progress={total > 0 ? done / total : 0} color={ringColor} trackColor={theme.paperSoft}>
             <View style={styles.ringCenter}>
               <Text style={[styles.ringValue, { color: theme.ink, fontFamily }]}>{done}</Text>
               <Text style={[styles.ringTotal, { color: theme.inkMuted, fontFamily }]}>/ {total}</Text>
             </View>
           </RingProgress>
-          <Text style={[styles.heroCaption, { color: theme.ink, fontFamily }]}>
-            {total > 0 ? `已完成 ${pct}%` : '今天还没有复习记录'}
-          </Text>
-          <Text style={[styles.heroMeta, { color: theme.inkMuted, fontFamily }]}>
-            {stats.dueCount > 0
-              ? `今日待复习 ${stats.dueCount} 张 · 到期的评过都算进度`
-              : total > 0
-                ? '今日到期卡片已全部复习完'
-                : '到期后这里会显示今日进度'}
-          </Text>
+          <View style={styles.heroRight}>
+            <Text style={[styles.heroLabel, { color: theme.inkMuted, fontFamily }]}>今日复习进度</Text>
+            <Text style={[styles.heroCaption, { color: theme.ink, fontFamily }]}>
+              {total > 0 ? `已完成 ${pct}%` : '今天还没有复习记录'}
+            </Text>
+            <Text style={[styles.heroMeta, { color: theme.inkMuted, fontFamily }]}>
+              {stats.dueCount > 0
+                ? `今日待复习 ${stats.dueCount} 张`
+                : total > 0
+                  ? '今日到期卡片已全部复习完'
+                  : '到期后这里会显示今日进度'}
+            </Text>
+            <View style={styles.heroActions}>
+              <AppButton label="提前复习" icon="time-outline" variant="light" onPress={onStartAheadReview} style={styles.heroActionButton} />
+              {stats.dueCount > 0 ? (
+                <AppButton label={`继续复习 · ${stats.dueCount} 张`} icon="repeat" onPress={onStartReview} style={styles.heroActionButton} />
+              ) : (
+                <AppButton label="去 GET 新卡" icon="flash-outline" onPress={onStartGet} style={styles.heroActionButton} />
+              )}
+            </View>
+          </View>
         </View>
 
         <UpcomingCard fontFamily={fontFamily} />
@@ -159,58 +170,6 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
           {stats.weakCount > 0 ? (
             <Text style={[styles.weakNote, { color: theme.inkMuted, fontFamily }]}>遗忘过的卡片在到期复习时排最前面，直到重新记住。</Text>
           ) : null}
-        </View>
-
-        <View style={[styles.card, styles.actionCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="提前复习"
-            onPress={onStartAheadReview}
-            style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-          >
-            <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
-              <Ionicons name="time-outline" size={16} color={theme.accent} />
-            </View>
-            <View style={styles.actionTextWrap}>
-              <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>提前复习</Text>
-              <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>主动复习还未到期的知识</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
-          </Pressable>
-          <View style={[styles.actionDivider, { backgroundColor: theme.line }]} />
-          {stats.dueCount > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="继续复习"
-              onPress={onStartReview}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
-                <Ionicons name="repeat" size={16} color={theme.accent} />
-              </View>
-              <View style={styles.actionTextWrap}>
-                <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>继续复习</Text>
-                <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>还有 {stats.dueCount} 张到期卡片</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="去 GET 新卡"
-              onPress={onStartGet}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: theme.paperSoft }]}>
-                <Ionicons name="flash-outline" size={16} color={theme.accent} />
-              </View>
-              <View style={styles.actionTextWrap}>
-                <Text style={[styles.actionTitle, { color: theme.ink, fontFamily }]}>去 GET 新卡</Text>
-                <Text style={[styles.actionMeta, { color: theme.inkMuted, fontFamily }]}>继续获取新的知识</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={17} color={theme.inkMuted} />
-            </Pressable>
-          )}
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
@@ -361,13 +320,16 @@ function StatusCardsModal({ status, cards, settings, onClose, onCardPress }: {
 
 const styles = StyleSheet.create({
   wrap: { padding: 18, paddingBottom: 140, gap: 14 },
-  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: 22, alignItems: 'center', gap: 8 },
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 14, flexDirection: 'row', alignItems: 'center' },
+  heroRight: { flex: 1, gap: 3 },
+  heroActions: { gap: 8, marginTop: 10 },
+  heroActionButton: { minHeight: 40, paddingHorizontal: 12 },
   heroLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
   ringCenter: { alignItems: 'center' },
-  ringValue: { fontSize: 38, lineHeight: 42, fontWeight: '900', letterSpacing: -1 },
-  ringTotal: { fontSize: 14, fontWeight: '800' },
+  ringValue: { fontSize: 26, lineHeight: 30, fontWeight: '900', letterSpacing: -0.6 },
+  ringTotal: { fontSize: 11, fontWeight: '800' },
   heroCaption: { fontSize: 16, fontWeight: '900', marginTop: 2 },
-  heroMeta: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  heroMeta: { fontSize: 12, fontWeight: '700' },
   card: { borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 12 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardHeadMeta: { fontSize: 11, fontWeight: '700' },
@@ -378,13 +340,6 @@ const styles = StyleSheet.create({
   stateLabel: { fontSize: 11, fontWeight: '800' },
   stateHint: { fontSize: 11, lineHeight: 18, fontWeight: '600' },
   weakNote: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  actionCard: { paddingVertical: 6, paddingHorizontal: 16, gap: 0 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
-  actionIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  actionTextWrap: { flex: 1, gap: 2 },
-  actionTitle: { fontSize: 15, fontWeight: '900' },
-  actionMeta: { fontSize: 12, fontWeight: '600' },
-  actionDivider: { height: StyleSheet.hairlineWidth },
   bodyText: { fontSize: 13, lineHeight: 22 },
   pressed: { opacity: 0.72 },
   upcomingRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },

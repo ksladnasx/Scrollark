@@ -18,6 +18,7 @@ import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { HomeShareOverlay } from './components/HomeShareOverlay';
 import { StatsShareOverlay } from './components/StatsShareOverlay';
+import { MarkdownGuideModal } from './components/MarkdownGuideModal';
 import { TabBar } from './components/TabBar';
 import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
 import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
@@ -70,6 +71,8 @@ export default function App() {
   const [sharingHome, setSharingHome] = React.useState<ImageSourcePropType | null>(null);
   // 「我的」页学习档案海报：内容不含壁纸图源，只挂浮层即可。
   const [sharingStats, setSharingStats] = React.useState(false);
+  // 知识库页头按钮：Markdown 导入格式说明。
+  const [mdGuideOpen, setMdGuideOpen] = React.useState(false);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
 
   const refresh = React.useCallback(async () => {
@@ -274,7 +277,17 @@ export default function App() {
               />
             ) : (
               <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
-                <PageHeader tab={activeTab} onBack={goBack} />
+                <PageHeader
+                  tab={activeTab}
+                  onBack={goBack}
+                  onIconPress={
+                    activeTab === 'review'
+                      ? () => navigate({ name: 'review', mode: 'ahead' })
+                      : activeTab === 'knowledge'
+                        ? () => setMdGuideOpen(true)
+                        : undefined
+                  }
+                />
                 <View style={styles.pageBody}>
                   {renderPage(activeTab, { stats, settings, documents, cards, favorites, navigate, goHome, refresh, setSettings, onShare: setSharingCard, onShareStats: () => setSharingStats(true) })}
                 </View>
@@ -305,15 +318,23 @@ export default function App() {
               onDone={() => setSharingStats(false)}
             />
           ) : null}
+          {mdGuideOpen ? (
+            <MarkdownGuideModal
+              settings={settings}
+              onClose={() => setMdGuideOpen(false)}
+            />
+          ) : null}
         </View>
       </SafeAreaProvider>
     </ThemeProvider>
   );
 }
 
-function PageHeader({ tab, onBack }: { tab: TabKey; onBack: () => void }) {
+function PageHeader({ tab, onBack, onIconPress }: { tab: TabKey; onBack: () => void; onIconPress?: () => void }) {
   const meta = pageMeta[tab];
   const theme = useAppTheme();
+  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明）。
+  const iconLabel = tab === 'review' ? '提前复习' : tab === 'knowledge' ? 'Markdown 格式说明' : meta.title;
   return (
     <View style={[styles.headerBar, { backgroundColor: theme.paper }] }>
       <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
@@ -323,9 +344,20 @@ function PageHeader({ tab, onBack }: { tab: TabKey; onBack: () => void }) {
         <Text style={[styles.headerSubtitle, { color: theme.inkMuted }]}>{meta.subtitle}</Text>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>{meta.title}</Text>
       </View>
-      <View style={[styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-        <Ionicons name={meta.icon} size={23} color={theme.ink} />
-      </View>
+      {onIconPress ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={iconLabel}
+          onPress={onIconPress}
+          style={({ pressed }) => [styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+        >
+          <Ionicons name={meta.icon} size={23} color={theme.ink} />
+        </Pressable>
+      ) : (
+        <View style={[styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+          <Ionicons name={meta.icon} size={23} color={theme.ink} />
+        </View>
+      )}
     </View>
   );
 }

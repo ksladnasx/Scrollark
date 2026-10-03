@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, type LayoutChangeEvent }
 import type { Statistics } from '../domain/types';
 import { getDailyActivity, getWeeklyComparison, type WeeklyComparison } from '../data/repository';
 import { useAppTheme } from '../theme/ThemeContext';
-import { masteryColors, palette, radius } from '../theme/tokens';
+import { masteryColors, palette, radius, type AppTheme } from '../theme/tokens';
 
 // 趋势图气泡宽度与判定高度：气泡显示在点的上方，点太靠上时改到下方。
 const TOOLTIP_WIDTH = 80;
@@ -235,6 +235,13 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
         </View>
         <Text style={[styles.progressText, { color: theme.ink }]}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
         <Text style={[styles.progressText, { color: theme.ink }]}>今日 GET {stats.todayGets} · 今日复习 {stats.todayReviews} · 已连续 {stats.streakDays} 天</Text>
+        <View style={[styles.heroDivider, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]} />
+        <View style={styles.heroMiniGrid}>
+          <HeroMiniStat label="文档" value={stats.documents} theme={theme} />
+          <HeroMiniStat label="卡片" value={stats.totalCards} theme={theme} />
+          <HeroMiniStat label="收藏" value={stats.favoriteCards} theme={theme} />
+          <HeroMiniStat label="批注" value={stats.annotatedCards} theme={theme} />
+        </View>
       </View>
 
       <Pressable
@@ -253,39 +260,6 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
         <Text style={[styles.favCount, { color: theme.inkMuted }]}>{stats.favoriteCards}</Text>
         <Ionicons name="chevron-forward" size={16} color={theme.inkMuted} />
       </Pressable>
-
-      <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-        <View style={styles.goalHead}>
-          <Text style={[styles.goalTitle, { color: theme.ink }]}>掌握程度</Text>
-          {stats.dueCount > 0 ? <Text style={[styles.goalValue, { color: theme.inkMuted }]}>待复习 {stats.dueCount} 张</Text> : null}
-        </View>
-        <View style={[styles.masteryBar, { backgroundColor: theme.paperSoft }]}>
-          {masterySegments.map((segment) => (
-            segment.count > 0 ? (
-              <View key={`mastery-${segment.label}`} style={{ flex: segment.count, backgroundColor: segment.color }} />
-            ) : null
-          ))}
-        </View>
-        <View style={styles.masteryLegend}>
-          {masterySegments.map((segment) => (
-            <View key={`mastery-legend-${segment.label}`} style={styles.masteryLegendItem}>
-              <View style={[styles.masteryDot, { backgroundColor: segment.color, borderColor: theme.line }]} />
-              <Text style={[styles.masteryLegendLabel, { color: theme.inkMuted }]}>{segment.label}</Text>
-              <Text style={[styles.masteryLegendValue, { color: theme.ink }]}>{segment.count}</Text>
-            </View>
-          ))}
-        </View>
-        {stats.weakCount > 0 ? (
-          <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>有 {stats.weakCount} 张卡片忘记过，复习时会优先安排。</Text>
-        ) : null}
-      </View>
-
-      <View style={styles.grid}>
-        <Metric label="文档" value={stats.documents} />
-        <Metric label="卡片" value={stats.totalCards} />
-        <Metric label="收藏" value={stats.favoriteCards} />
-        <Metric label="批注" value={stats.annotatedCards} />
-      </View>
 
       <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
         <View style={styles.goalHead}>
@@ -318,9 +292,33 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
         )}
       </View>
 
-      <WeeklyCard goal={stats.goal} />
+      <View style={[styles.goalCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+        <View style={styles.goalHead}>
+          <Text style={[styles.goalTitle, { color: theme.ink }]}>掌握程度</Text>
+          {stats.dueCount > 0 ? <Text style={[styles.goalValue, { color: theme.inkMuted }]}>待复习 {stats.dueCount} 张</Text> : null}
+        </View>
+        <View style={[styles.masteryBar, { backgroundColor: theme.paperSoft }]}>
+          {masterySegments.map((segment) => (
+            segment.count > 0 ? (
+              <View key={`mastery-${segment.label}`} style={{ flex: segment.count, backgroundColor: segment.color }} />
+            ) : null
+          ))}
+        </View>
+        <View style={styles.masteryLegend}>
+          {masterySegments.map((segment) => (
+            <View key={`mastery-legend-${segment.label}`} style={styles.masteryLegendItem}>
+              <View style={[styles.masteryDot, { backgroundColor: segment.color, borderColor: theme.line }]} />
+              <Text style={[styles.masteryLegendLabel, { color: theme.inkMuted }]}>{segment.label}</Text>
+              <Text style={[styles.masteryLegendValue, { color: theme.ink }]}>{segment.count}</Text>
+            </View>
+          ))}
+        </View>
+        {stats.weakCount > 0 ? (
+          <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>有 {stats.weakCount} 张卡片忘记过，复习时会优先安排。</Text>
+        ) : null}
+      </View>
 
-      <HeatmapCard />
+      <WeeklyCard goal={stats.goal} />
 
       <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
         <Text style={[styles.sectionTitle, { color: theme.ink }]}>最近 7 天 get 趋势</Text>
@@ -391,16 +389,26 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
           </View>
         </View>
       </View>
+
+      <HeatmapCard />
     </ScrollView>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  const theme = useAppTheme();
+// 总吸收卡片内的四项支撑统计：半透明小卡浮在 accentSoft 底色上，明暗模式取同向色。
+function HeroMiniStat({ label, value, theme }: { label: string; value: number; theme: AppTheme }) {
   return (
-    <View style={[styles.metric, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
-      <Text style={[styles.metricValue, { color: theme.ink }]}>{value}</Text>
-      <Text style={[styles.metricLabel, { color: theme.inkMuted }]}>{label}</Text>
+    <View
+      style={[
+        styles.heroMiniTile,
+        {
+          backgroundColor: theme.dark ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.45)',
+          borderColor: theme.dark ? 'rgba(255,255,255,0.16)' : 'rgba(23,22,17,0.10)',
+        },
+      ]}
+    >
+      <Text style={[styles.heroMiniValue, { color: theme.ink }]}>{value}</Text>
+      <Text style={[styles.heroMiniLabel, { color: theme.ink, opacity: 0.72 }]}>{label}</Text>
     </View>
   );
 }
@@ -417,10 +425,11 @@ const styles = StyleSheet.create({
   progressTrack: { height: 8, backgroundColor: 'rgba(23,22,17,0.18)', borderRadius: 4, marginTop: 10, overflow: 'hidden' },
   progressFill: { height: 8, backgroundColor: palette.ink, borderRadius: 4 },
   progressText: { color: palette.ink, opacity: 0.72, fontSize: 12, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  metric: { width: '48%', borderRadius: radius.lg, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 16 },
-  metricValue: { color: palette.ink, fontSize: 30, fontWeight: '900', letterSpacing: -0.8 },
-  metricLabel: { color: palette.inkMuted, fontSize: 12, fontWeight: '800' },
+  heroDivider: { height: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginTop: 4 },
+  heroMiniGrid: { flexDirection: 'row', gap: 8 },
+  heroMiniTile: { flex: 1, borderRadius: radius.md, borderWidth: 1, paddingVertical: 10, alignItems: 'center', gap: 2 },
+  heroMiniValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.4 },
+  heroMiniLabel: { fontSize: 11, fontWeight: '700' },
   chartCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 14 },
   goalCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 10 },
   goalHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

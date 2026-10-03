@@ -13,10 +13,12 @@ type Props = {
   onDone: () => void;
 };
 
-// 主数据区几何参数：左侧数字标签 + 引导线 + 右侧环形扇形图，同一行横向排布。
+// 主数据区几何参数：左侧数字标签与支撑统计（2x2）+ 引导线 + 右侧环形扇形图，同一区排布。
 // 扇区以「已吸收占比」为中心对称地锚定在圆的左侧（180°），
-// 引导线从扇区中点边缘（圆的最左点）水平连到左侧数字标签。
-const HERO_H = 116;
+// 引导线从扇区中点边缘（圆的最左点）水平连到左侧「总吸收卡片」标签行；
+// 圆环中心（HERO_CY）与数值/标签行对齐，支撑统计网格占满区块左下。
+const HERO_H = 160;
+const HERO_CY = 56;
 const DONUT_SIZE = 96;
 const DONUT_R = 37;
 const DONUT_STROKE = 13;
@@ -47,7 +49,7 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
   // 扇形图几何：已吸收/全部卡片为占比，扇区中心对称锚定在圆的最左侧。
   const contentW = width - 48;
   const cx = contentW - DONUT_SIZE / 2;
-  const cy = HERO_H / 2;
+  const cy = HERO_CY;
   const ratio = stats.totalCards > 0 ? Math.min(1, stats.gotCards / stats.totalCards) : 0;
   const hasSector = ratio > 0;
   const circumference = DONUT_R * 2 * Math.PI;
@@ -110,7 +112,7 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
               ) : null}
             </View>
 
-            {/* 总吸收卡片：左侧数字标签 → 引导线 → 右侧环形扇形图 */}
+            {/* 总吸收卡片：左侧数字标签 + 支撑统计（2x2）→ 引导线 → 右侧环形扇形图 */}
             <View style={[styles.heroRow, { width: contentW, height: HERO_H }]}>
               <Svg width={contentW} height={HERO_H}>
                 {hasSector ? <Line x1={lineX1} y1={lineY} x2={lineX2} y2={lineY} stroke="#F2B737" strokeWidth={1.5} /> : null}
@@ -131,18 +133,17 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
               <View style={[styles.heroLabelBox, { width: LABEL_W }]}>
                 <Text adjustsFontSizeToFit numberOfLines={1} style={styles.heroValue}>{stats.gotCards}</Text>
                 <Text style={[styles.heroLabel, { fontFamily }]}>总吸收卡片</Text>
+                <View style={styles.heroMiniGrid}>
+                  <HeroMiniStat label="知识卡片" value={stats.totalCards} fontFamily={fontFamily} />
+                  <HeroMiniStat label="收藏" value={stats.favoriteCards} fontFamily={fontFamily} />
+                  <HeroMiniStat label="批注" value={stats.annotatedCards} fontFamily={fontFamily} />
+                  <HeroMiniStat label="文档" value={stats.documents} fontFamily={fontFamily} />
+                </View>
               </View>
-              <View style={[styles.donutCenter, { width: DONUT_SIZE, left: cx - DONUT_SIZE / 2 }]}>
+              <View style={[styles.donutCenter, { width: DONUT_SIZE, height: DONUT_SIZE, top: cy - DONUT_SIZE / 2, left: cx - DONUT_SIZE / 2 }]}>
                 <Text style={[styles.donutCaption, { fontFamily }]}>已吸收</Text>
                 <Text style={styles.donutPct}>{pctText}</Text>
               </View>
-            </View>
-
-            <View style={styles.miniGrid}>
-              <MiniStat label="知识卡片" value={stats.totalCards} fontFamily={fontFamily} />
-              <MiniStat label="收藏" value={stats.favoriteCards} fontFamily={fontFamily} />
-              <MiniStat label="批注" value={stats.annotatedCards} fontFamily={fontFamily} />
-              <MiniStat label="文档" value={stats.documents} fontFamily={fontFamily} />
             </View>
 
             <View style={styles.footer}>
@@ -165,11 +166,11 @@ export function HomeShareOverlay({ imageSource, settings, stats, onDone }: Props
   );
 }
 
-function MiniStat({ label, value, fontFamily }: { label: string; value: number; fontFamily: string }) {
+function HeroMiniStat({ label, value, fontFamily }: { label: string; value: number; fontFamily: string }) {
   return (
-    <View style={styles.miniTile}>
-      <Text style={styles.miniValue}>{value}</Text>
-      <Text style={[styles.miniLabel, { fontFamily }]}>{label}</Text>
+    <View style={styles.heroMiniTile}>
+      <Text style={styles.heroMiniValue}>{value}</Text>
+      <Text style={[styles.heroMiniLabel, { fontFamily }]}>{label}</Text>
     </View>
   );
 }
@@ -205,25 +206,26 @@ const styles = StyleSheet.create({
   goalFill: { height: 8, borderRadius: 4, backgroundColor: '#FFF9EE' },
   goalStreak: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '700' },
   heroRow: { position: 'relative' },
-  heroLabelBox: { position: 'absolute', left: 0, top: 0, bottom: 0, justifyContent: 'center', gap: 2 },
-  heroValue: { color: '#FFFFFF', fontSize: 46, lineHeight: 52, fontWeight: '900', letterSpacing: -1.5 },
+  heroLabelBox: { position: 'absolute', left: 0, top: 0, gap: 2 },
+  heroValue: { color: '#FFFFFF', fontSize: 44, lineHeight: 50, fontWeight: '900', letterSpacing: -1.5 },
   heroLabel: { color: 'rgba(255,255,255,0.78)', fontSize: 13, fontWeight: '800' },
-  donutCenter: { position: 'absolute', top: 0, height: '100%', alignItems: 'center', justifyContent: 'center', gap: 1 },
-  donutCaption: { color: 'rgba(255,255,255,0.72)', fontSize: 10, fontWeight: '700' },
-  donutPct: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
-  miniGrid: { flexDirection: 'row', gap: 8 },
-  miniTile: {
-    flex: 1,
-    borderRadius: 14,
+  heroMiniGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8, width: LABEL_W },
+  heroMiniTile: {
+    width: (LABEL_W - 6) / 2,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.22)',
     backgroundColor: 'rgba(255,255,255,0.14)',
-    paddingVertical: 12,
+    paddingVertical: 5,
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
+    gap: 1,
   },
-  miniValue: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
-  miniLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontWeight: '700' },
+  heroMiniValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
+  heroMiniLabel: { color: 'rgba(255,255,255,0.72)', fontSize: 9, fontWeight: '700' },
+  donutCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center', gap: 1 },
+  donutCaption: { color: 'rgba(255,255,255,0.72)', fontSize: 10, fontWeight: '700' },
+  donutPct: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.28)',
