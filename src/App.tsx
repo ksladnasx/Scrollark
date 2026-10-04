@@ -60,7 +60,7 @@ const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof ty
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
   stats: { title: '我的', subtitle: 'My Learning', icon: 'share-social-outline' },
-  settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },
+  settings: { title: '设置', subtitle: 'Setting', icon: 'settings-outline' },
 };
 
 export default function App() {

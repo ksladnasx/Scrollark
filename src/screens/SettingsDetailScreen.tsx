@@ -465,7 +465,7 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
             <Section icon="archive-outline" title="数据备份" theme={theme} settings={settings}>
               <Rows theme={theme}>
                 <View style={styles.actionRow}>
-                  <AppButton label="导出全部数据（JSON）" icon="download-outline" variant="dark" loading={exportBusy} onPress={() => { void handleExportBackup(); }} />
+                  <AppButton label="导出全部数据" icon="download-outline" variant="dark" loading={exportBusy} onPress={() => { void handleExportBackup(); }} />
                 </View>
                 <View style={styles.actionRow}>
                   <AppButton label="从备份文件导入" icon="duplicate-outline" variant="light" loading={importBusy} onPress={() => { void handleImportBackup(); }} />
@@ -517,9 +517,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
               </View>
               <Ionicons name="open-outline" size={16} color={theme.inkMuted} />
             </Pressable>
-            <Text style={[styles.aboutHint, { color: theme.inkMuted, fontFamily }]}>
-              点击项目地址可直接在浏览器中打开仓库主页。
-            </Text>
           </>
         ) : null}
       </ScrollView>

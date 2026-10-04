@@ -78,9 +78,6 @@ export function SettingsScreen({ settings, onOpenSection }: Props) {
 
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
-      <Text style={[styles.hint, { color: theme.inkMuted, fontFamily }]}>
-        选择一个分类进入详细设置，配置会立即生效并保存在本机。
-      </Text>
       {groups.map((group, groupIndex) => (
         <View key={`settings-group-${groupIndex}`} style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
           {group.map((entry, index) => (
