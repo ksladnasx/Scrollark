@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CardRecord, Settings } from '../domain/types';
 import { isCustomCard } from '../data/repository';
 import { showAlert } from './AppAlert';
@@ -32,6 +32,7 @@ type Props = {
 
 export function CardDetailModal({ card, settings, onClose, onEditAnnotation, onEdit, onShare, onResetProgress, onDelete }: Props) {
   const theme = useAppTheme();
+  const insets = useSafeAreaInsets();
   const status = card ? cardReviewStatus(card) : null;
 
   const confirmReset = React.useCallback((target: CardRecord) => {
@@ -91,47 +92,50 @@ export function CardDetailModal({ card, settings, onClose, onEditAnnotation, onE
             }
           />
         ) : null}
-        {card ? (
-          // 卡片操作区（统一布局）：[编辑（手写卡）] [删除（红色危险）] [分享]，
-          // 删除固定在分享左侧；没有分享按钮时末位回退为关闭。
-          <View style={styles.cornerCluster}>
-            {editable ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="编辑这张卡片"
-                onPress={() => { onClose(); onEdit?.(card); }}
-                style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}
-              >
-                <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-              </Pressable>
-            ) : null}
-            {onDelete ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="删除这张卡片"
-                onPress={() => confirmDelete(card)}
-                style={({ pressed }) => [styles.cornerButton, styles.deleteButton, { backgroundColor: theme.red }, pressed && styles.pressed]}
-              >
-                <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-              </Pressable>
-            ) : null}
-            {onShare ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="分享卡片"
-                onPress={() => { onClose(); onShare(card); }}
-                style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}
-              >
-                <Ionicons name="share-social-outline" size={22} color="#FFFFFF" />
-              </Pressable>
-            ) : (
-              <Pressable onPress={onClose} style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}>
-                <Ionicons name="close" size={24} color="#FFFFFF" />
-              </Pressable>
-            )}
-          </View>
-        ) : null}
       </SafeAreaView>
+      {card ? (
+        // 卡片操作区（统一布局）：[编辑（手写卡）] [删除（红色危险）] [分享]，
+        // 删除固定在分享左侧；没有分享按钮时末位回退为关闭。
+        // 按钮组必须挂在 Modal 根层（无 padding 节点）内走流式布局：
+        // 绝对定位子元素不继承 SafeAreaView 的安全区 padding，
+        // 正式包边到边窗口下会整体上移一个状态栏高度（调试包看不出差异）。
+        <View style={[styles.cornerCluster, { paddingTop: insets.top + 16 }]} pointerEvents="box-none">
+          {editable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="编辑这张卡片"
+              onPress={() => { onClose(); onEdit?.(card); }}
+              style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+          {onDelete ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="删除这张卡片"
+              onPress={() => confirmDelete(card)}
+              style={({ pressed }) => [styles.cornerButton, styles.deleteButton, { backgroundColor: theme.red }, pressed && styles.pressed]}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            </Pressable>
+          ) : null}
+          {onShare ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="分享卡片"
+              onPress={() => { onClose(); onShare(card); }}
+              style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}
+            >
+              <Ionicons name="share-social-outline" size={22} color="#FFFFFF" />
+            </Pressable>
+          ) : (
+            <Pressable onPress={onClose} style={({ pressed }) => [styles.cornerButton, pressed && styles.pressed]}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
+          )}
+        </View>
+      ) : null}
     </Modal>
   );
 }
@@ -144,13 +148,19 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '700' },
   resetButton: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   resetText: { fontSize: 12, fontWeight: '800' },
+  // 顶部全宽条锚在 Modal 根层（top/left/right 全 0，不受任何 padding 语义影响），
+  // 垂直位置由 paddingTop（状态栏高度 + 16，对齐左上角返回按钮）以普通流式布局下推；
+  // 按钮在条内右对齐排列。
   cornerCluster: {
     position: 'absolute',
-    top: 14,
-    right: 14,
+    top: -38,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     gap: 10,
+    paddingRight: 14,
   },
   cornerButton: {
     width: 44,
