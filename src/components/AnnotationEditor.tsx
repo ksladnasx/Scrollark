@@ -1,7 +1,8 @@
 import React from 'react';
-import { Alert, BackHandler, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { BackHandler, Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from './AppButton';
+import { showAlert } from './AppAlert';
 import { saveAnnotation } from '../data/repository';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
@@ -46,10 +47,14 @@ export function AnnotationEditor({ card, settings, onClose, onSaved }: Props) {
       closeEditor();
       return;
     }
-    Alert.alert('放弃批注？', '当前输入的批注内容还未保存。', [
-      { text: '继续编辑', style: 'cancel' },
-      { text: '放弃', style: 'destructive', onPress: () => closeEditor() },
-    ]);
+    showAlert({
+      title: '放弃批注？',
+      message: '当前输入的批注内容还未保存。',
+      buttons: [
+        { text: '继续编辑', style: 'cancel' },
+        { text: '放弃', style: 'destructive', onPress: () => closeEditor() },
+      ],
+    });
   }, [card.annotation, closeEditor, draft]);
 
   const persist = React.useCallback(async () => {
@@ -60,7 +65,7 @@ export function AnnotationEditor({ card, settings, onClose, onSaved }: Props) {
       Keyboard.dismiss();
       onSaved(draft.trim() || null);
     } catch (error) {
-      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后再试');
+      showAlert({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后再试' });
     } finally {
       setSaving(false);
     }

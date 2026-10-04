@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
-import { Alert, ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import { showAlert } from '../components/AppAlert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
 import { heroImages } from '../theme/assets';
@@ -101,9 +102,9 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
       setDownloadBusy(true);
       const sourceUri = homeImageUri ?? await getDailyHomeBackgroundImageUri(settings.homeBackgroundImageUrl);
       const savedUri = await saveHomeBackgroundImageToDirectory(sourceUri, settings.homeBackgroundDownloadDirectory);
-      Alert.alert('下载完成', `背景图已保存到：\n${savedUri}`);
+      showAlert({ title: '下载完成', message: `背景图已保存到：\n${savedUri}` });
     } catch (error) {
-      Alert.alert('下载失败', error instanceof Error ? error.message : '背景图保存失败，请稍后再试。');
+      showAlert({ title: '下载失败', message: error instanceof Error ? error.message : '背景图保存失败，请稍后再试。' });
     } finally {
       setDownloadBusy(false);
     }
@@ -111,10 +112,14 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
 
   const confirmDownloadBackground = React.useCallback(() => {
     if (downloadBusy) return;
-    Alert.alert('下载背景图', '是否下载当前首页背景图？', [
-      { text: '取消', style: 'cancel' },
-      { text: '下载', onPress: () => { void downloadBackground(); } },
-    ]);
+    showAlert({
+      title: '下载背景图',
+      message: '是否下载当前首页背景图？',
+      buttons: [
+        { text: '取消', style: 'cancel' },
+        { text: '下载', onPress: () => { void downloadBackground(); } },
+      ],
+    });
   }, [downloadBackground, downloadBusy]);
 
   const today = React.useMemo(() => {

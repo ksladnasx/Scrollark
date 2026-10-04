@@ -27,6 +27,8 @@ function activityOpacity(count: number) {
 function HeatmapCard() {
   const theme = useAppTheme();
   const [activity, setActivity] = React.useState<{ date: string; count: number }[]>([]);
+  // 点选某天：格子出现描边，图例位置显示当天的记录次数（再点一次取消）。
+  const [selectedDay, setSelectedDay] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     let alive = true;
@@ -54,6 +56,7 @@ function HeatmapCard() {
 
   const total = activity.reduce((sum, day) => sum + day.count, 0);
   const activeDays = activity.filter((day) => day.count > 0).length;
+  const selectedInfo = selectedDay ? activity.find((day) => day.date === selectedDay) ?? null : null;
 
   return (
     <View style={[styles.chartCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
@@ -73,20 +76,32 @@ function HeatmapCard() {
             <View style={styles.heatmapGrid}>
               {columns.map((column, columnIndex) => (
                 <View key={`week-${columnIndex}`} style={styles.heatmapColumn}>
-                  {column.map((day, dayIndex) => (
-                    <View
-                      key={day ? `day-${day.date}` : `empty-${columnIndex}-${dayIndex}`}
-                      style={[
-                        styles.heatmapCell,
-                        {
-                          height: CELL,
-                          width: CELL,
-                          backgroundColor: day && day.count > 0 ? theme.accent : theme.paperSoft,
-                          opacity: day && day.count > 0 ? activityOpacity(day.count) : 1,
-                        },
-                      ]}
-                    />
-                  ))}
+                  {column.map((day, dayIndex) => {
+                    const selected = day !== null && day.date === selectedDay;
+                    return (
+                      <Pressable
+                        key={day ? `day-${day.date}` : `empty-${columnIndex}-${dayIndex}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={day ? `${day.date} 记录 ${day.count} 次` : undefined}
+                        onPress={day ? () => setSelectedDay((current) => (current === day.date ? null : day.date)) : undefined}
+                        hitSlop={2}
+                      >
+                        <View
+                          style={[
+                            styles.heatmapCell,
+                            {
+                              height: CELL,
+                              width: CELL,
+                              backgroundColor: day && day.count > 0 ? theme.accent : theme.paperSoft,
+                              opacity: day && day.count > 0 && !selected ? activityOpacity(day.count) : 1,
+                              borderWidth: selected ? 2 : 0,
+                              borderColor: theme.ink,
+                            },
+                          ]}
+                        />
+                      </Pressable>
+                    );
+                  })}
                 </View>
               ))}
             </View>
@@ -94,7 +109,11 @@ function HeatmapCard() {
         </ScrollView>
       )}
       <View style={styles.heatmapLegend}>
-        <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>近一年 {total} 次 · {activeDays} 天有记录</Text>
+        <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>
+          {selectedDay && selectedInfo
+            ? `${Number(selectedDay.slice(5, 7))}月${Number(selectedDay.slice(8, 10))}日 · ${selectedInfo.count} 次记录`
+            : `近一年 ${total} 次 · ${activeDays} 天有记录`}
+        </Text>
         <View style={styles.legendScale}>
           <Text style={[styles.heatmapMeta, { color: theme.inkMuted }]}>少</Text>
           {[0, 2, 5, 9, 12].map((count) => (
@@ -184,7 +203,7 @@ function WeeklyCard({ goal }: { goal: number }) {
   );
 }
 
-export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { stats: Statistics; onOpenFavorites: () => void; onShareStats: () => void }) {
+export function StatisticsScreen({ stats, onOpenFavorites, onShareStats, onUpdateGoal }: { stats: Statistics; onOpenFavorites: () => void; onShareStats: () => void; onUpdateGoal: (goal: number) => void }) {
   const theme = useAppTheme();
   const max = Math.max(1, ...stats.week.map((d) => d.count));
   const progress = stats.totalCards > 0 ? Math.round((stats.gotCards / stats.totalCards) * 100) : 0;
@@ -218,30 +237,29 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
   return (
     <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
-      {/* 吸收概览：背景与文字随明暗模式取同向色（浅色模式浅卡片、深色模式深卡片） */}
+      {/* 吸收概览：左侧总吸收大数字，右侧 2x2 支撑统计（文档/卡片/收藏/批注） */}
       <View style={[styles.heroStat, { backgroundColor: theme.accentSoft }] }>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="分享学习档案"
-          onPress={onShareStats}
-          style={({ pressed }) => [styles.heroShareButton, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.16)' : 'rgba(23,22,17,0.08)' }, pressed && styles.pressed]}
-        >
-          <Ionicons name="share-social-outline" size={16} color={theme.ink} />
-        </Pressable>
-        <Text style={[styles.heroValue, { color: theme.ink }]}>{stats.gotCards}</Text>
-        <Text style={[styles.heroLabel, { color: theme.ink }]}>总吸收卡片</Text>
+        <View style={styles.heroTopRow}>
+          <View style={styles.heroValueCol}>
+            <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.heroValue, { color: theme.ink }]}>{stats.gotCards}</Text>
+            <Text style={[styles.heroLabel, { color: theme.ink }]}>总吸收卡片</Text>
+          </View>
+          <View style={styles.heroMiniGrid}>
+            <View style={styles.heroMiniRow}>
+              <HeroMiniStat label="文档" value={stats.documents} theme={theme} />
+              <HeroMiniStat label="卡片" value={stats.totalCards} theme={theme} />
+            </View>
+            <View style={styles.heroMiniRow}>
+              <HeroMiniStat label="收藏" value={stats.favoriteCards} theme={theme} />
+              <HeroMiniStat label="批注" value={stats.annotatedCards} theme={theme} />
+            </View>
+          </View>
+        </View>
         <View style={[styles.progressTrack, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]}>
           <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: theme.ink }]} />
         </View>
         <Text style={[styles.progressText, { color: theme.ink }]}>总体进度 {progress}% · {stats.gotCards}/{stats.totalCards}</Text>
         <Text style={[styles.progressText, { color: theme.ink }]}>今日 GET {stats.todayGets} · 今日复习 {stats.todayReviews} · 已连续 {stats.streakDays} 天</Text>
-        <View style={[styles.heroDivider, { backgroundColor: theme.dark ? 'rgba(247,241,230,0.24)' : 'rgba(23,22,17,0.18)' }]} />
-        <View style={styles.heroMiniGrid}>
-          <HeroMiniStat label="文档" value={stats.documents} theme={theme} />
-          <HeroMiniStat label="卡片" value={stats.totalCards} theme={theme} />
-          <HeroMiniStat label="收藏" value={stats.favoriteCards} theme={theme} />
-          <HeroMiniStat label="批注" value={stats.annotatedCards} theme={theme} />
-        </View>
       </View>
 
       <Pressable
@@ -288,7 +306,22 @@ export function StatisticsScreen({ stats, onOpenFavorites, onShareStats }: { sta
             <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>本周达成 {weekHits}/7 天</Text>
           </>
         ) : (
-          <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>未设置每日目标，可在 设置 → 阅读节奏 中开启。</Text>
+          <>
+            <Text style={[styles.goalMeta, { color: theme.inkMuted }]}>未设置每日目标，选一个每天想 GET 的张数，立即开启：</Text>
+            <View style={styles.goalChips}>
+              {[5, 10, 20, 30].map((goalValue) => (
+                <Pressable
+                  key={`goal-${goalValue}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`设置每日目标 ${goalValue} 张`}
+                  onPress={() => onUpdateGoal(goalValue)}
+                  style={({ pressed }) => [styles.goalChip, { borderColor: theme.line, backgroundColor: theme.paperSoft }, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.goalChipText, { color: theme.ink }]}>{goalValue}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
         )}
       </View>
 
@@ -425,9 +458,11 @@ const styles = StyleSheet.create({
   progressTrack: { height: 8, backgroundColor: 'rgba(23,22,17,0.18)', borderRadius: 4, marginTop: 10, overflow: 'hidden' },
   progressFill: { height: 8, backgroundColor: palette.ink, borderRadius: 4 },
   progressText: { color: palette.ink, opacity: 0.72, fontSize: 12, fontWeight: '700' },
-  heroDivider: { height: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginTop: 4 },
-  heroMiniGrid: { flexDirection: 'row', gap: 8 },
-  heroMiniTile: { flex: 1, borderRadius: radius.md, borderWidth: 1, paddingVertical: 10, alignItems: 'center', gap: 2 },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  heroValueCol: { gap: 2 },
+  heroMiniGrid: { flex: 1, gap: 8 },
+  heroMiniRow: { flexDirection: 'row', gap: 8 },
+  heroMiniTile: { flex: 1, borderRadius: radius.md, borderWidth: 1, paddingVertical: 9, alignItems: 'center', gap: 2 },
   heroMiniValue: { fontSize: 20, fontWeight: '900', letterSpacing: -0.4 },
   heroMiniLabel: { fontSize: 11, fontWeight: '700' },
   chartCard: { borderRadius: radius.xl, backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line, padding: 18, gap: 14 },
@@ -440,7 +475,9 @@ const styles = StyleSheet.create({
   goalBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F2B737', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
   goalBadgeText: { color: '#5D4218', fontSize: 12, fontWeight: '900' },
   goalMeta: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
-  heroShareButton: { position: 'absolute', top: 16, right: 16, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  goalChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  goalChip: { minHeight: 34, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  goalChipText: { fontSize: 13, fontWeight: '700' },
   weekHeadMeta: { fontSize: 11, fontWeight: '700' },
   weekRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 12 },
   weekLabel: { flex: 1, fontSize: 13, fontWeight: '700' },

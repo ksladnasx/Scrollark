@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 import { parseMarkdownBlocks } from '../utils/markdown';
@@ -74,6 +74,19 @@ export function MarkdownBlocks({
             <View key={`block-code-${index}`} style={[styles.codeBox, { borderColor: theme.dark ? theme.line : 'rgba(255,255,255,0.08)' }] }>
               {block.language ? <Text style={styles.codeLang}>{block.language}</Text> : null}
               <Text selectable style={styles.codeText}>{block.code}</Text>
+            </View>
+          );
+        }
+        if (block.type === 'image') {
+          return (
+            <View key={`block-image-${index}`} style={styles.imageBlock}>
+              <Image
+                source={{ uri: block.uri }}
+                style={styles.image}
+                resizeMode="cover"
+                accessibilityLabel={block.alt || '卡片配图'}
+              />
+              {block.alt ? <Text style={[styles.imageCaption, { color: theme.inkMuted }]}>{block.alt}</Text> : null}
             </View>
           );
         }
@@ -185,6 +198,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(135,146,124,0.12)',
     borderRadius: radius.sm,
   },
+  imageBlock: { gap: 6 },
+  image: { width: '100%', aspectRatio: 4 / 3, maxHeight: 300, borderRadius: radius.lg, backgroundColor: 'rgba(17,17,15,0.06)' },
+  imageCaption: { fontSize: 12, fontWeight: '600' },
   list: {
     gap: 8,
   },

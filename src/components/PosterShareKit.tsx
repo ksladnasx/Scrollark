@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import React from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { showAlert } from './AppAlert';
 import { captureRef, captureScreen, releaseCapture } from 'react-native-view-shot';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius } from '../theme/tokens';
@@ -172,7 +173,7 @@ export function usePosterShare(options: { title: string; saveDirectory: string; 
       releaseCaptured();
       onDoneRef.current();
     } catch (error) {
-      Alert.alert('分享失败', error instanceof Error ? error.message : '请稍后再试');
+      showAlert({ title: '分享失败', message: error instanceof Error ? error.message : '请稍后再试' });
     } finally {
       setActionBusy(null);
     }
@@ -187,9 +188,9 @@ export function usePosterShare(options: { title: string; saveDirectory: string; 
       const savedUri = await saveHomeBackgroundImageToDirectory(uri, saveDirectory);
       releaseCaptured();
       onDoneRef.current();
-      Alert.alert('已保存', `分享图已保存到：\n${savedUri}`);
+      showAlert({ title: '已保存', message: `分享图已保存到：\n${savedUri}` });
     } catch (error) {
-      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后再试');
+      showAlert({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后再试' });
     } finally {
       setActionBusy(null);
     }
@@ -207,13 +208,13 @@ export function usePosterShare(options: { title: string; saveDirectory: string; 
         capturedUriRef.current = uri;
         if (cancelled) return;
         if (!uri) {
-          Alert.alert('生成分享图失败', '请稍后再试。');
+          showAlert({ title: '生成分享图失败', message: '请稍后再试。' });
           onDoneRef.current();
           return;
         }
         setCapturedUri(uri);
       } catch (error) {
-        Alert.alert('生成分享图失败', error instanceof Error ? error.message : '请稍后再试');
+        showAlert({ title: '生成分享图失败', message: error instanceof Error ? error.message : '请稍后再试' });
         onDoneRef.current();
       }
     })();

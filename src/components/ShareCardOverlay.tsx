@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, PixelRatio, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { PixelRatio, StyleSheet, Text, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { showAlert } from './AppAlert';
 import { captureScreen } from 'react-native-view-shot';
 import { resolveCardImageSource } from './CardHeaderImage';
 import { SharePoster } from './SharePoster';
@@ -97,7 +98,7 @@ export function ShareCardOverlay({ card, settings, onDone }: Props) {
       releaseCaptured();
       onDoneRef.current();
     } catch (error) {
-      Alert.alert('分享失败', error instanceof Error ? error.message : '请稍后再试');
+      showAlert({ title: '分享失败', message: error instanceof Error ? error.message : '请稍后再试' });
     } finally {
       setActionBusy(null);
     }
@@ -112,9 +113,9 @@ export function ShareCardOverlay({ card, settings, onDone }: Props) {
       const savedUri = await saveHomeBackgroundImageToDirectory(uri, settings.homeBackgroundDownloadDirectory);
       releaseCaptured();
       onDoneRef.current();
-      Alert.alert('已保存', `分享图已保存到：\n${savedUri}`);
+      showAlert({ title: '已保存', message: `分享图已保存到：\n${savedUri}` });
     } catch (error) {
-      Alert.alert('保存失败', error instanceof Error ? error.message : '请稍后再试');
+      showAlert({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后再试' });
     } finally {
       setActionBusy(null);
     }
@@ -194,13 +195,13 @@ export function ShareCardOverlay({ card, settings, onDone }: Props) {
         capturedUriRef.current = uri;
         if (cancelled) return;
         if (!uri) {
-          Alert.alert('生成分享图失败', '请稍后再试。');
+          showAlert({ title: '生成分享图失败', message: '请稍后再试。' });
           onDoneRef.current();
           return;
         }
         setCapturedUri(uri);
       } catch (error) {
-        Alert.alert('生成分享图失败', error instanceof Error ? error.message : '请稍后再试');
+        showAlert({ title: '生成分享图失败', message: error instanceof Error ? error.message : '请稍后再试' });
         onDoneRef.current();
       }
     })();

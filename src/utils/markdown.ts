@@ -82,7 +82,32 @@ export type MarkdownBlock =
   | { type: 'quote'; text: string }
   | { type: 'list'; items: string[] }
   | { type: 'code'; language: string; code: string }
-  | { type: 'table'; header: string[]; rows: string[][] };
+  | { type: 'table'; header: string[]; rows: string[][] }
+  | { type: 'image'; uri: string; alt: string };
+
+// 独立成行的图片：![alt](uri)。手写卡片的配图以此形式写进正文。
+const imageLinePattern = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+
+function isImageLine(line: string) {
+  return imageLinePattern.test(line.trim());
+}
+
+// 紧凑卡片预览：取出正文里第一张独立成行的图片 URI，并把所有图片行从文本中剥掉
+//（图片行留在摘要里会变成裸链接文本）。没有图片时 uri 为 null。
+export function extractPreviewImage(markdown: string): { uri: string | null; text: string } {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  let uri: string | null = null;
+  const rest: string[] = [];
+  for (const line of lines) {
+    const match = line.trim().match(imageLinePattern);
+    if (match) {
+      if (uri === null) uri = match[2].trim();
+      continue;
+    }
+    rest.push(line);
+  }
+  return { uri, text: rest.join('\n') };
+}
 
 function isTableSeparator(line: string) {
   const trimmed = line.trim();
@@ -111,6 +136,7 @@ function isBlockStarter(line: string, nextLine?: string) {
     trimmed.startsWith('>') ||
     /^[-*+]\s+/.test(trimmed) ||
     /^\d+\.\s+/.test(trimmed) ||
+    isImageLine(line) ||
     (nextLine ? isTableRow(line) && isTableSeparator(nextLine) : false)
   );
 }
@@ -151,6 +177,13 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         index += 1;
       }
       blocks.push({ type: 'table', header, rows });
+      continue;
+    }
+
+    const imageMatch = trimmed.match(imageLinePattern);
+    if (imageMatch) {
+      blocks.push({ type: 'image', alt: imageMatch[1].trim(), uri: imageMatch[2].trim() });
+      index += 1;
       continue;
     }
 

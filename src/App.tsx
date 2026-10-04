@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
-import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, useColorScheme, View, type ImageSourcePropType } from 'react-native';
+import { ActivityIndicator, Animated, BackHandler, Dimensions, Easing, Pressable, StyleSheet, Text, useColorScheme, View, type ImageSourcePropType } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
 import { FavoritesScreen } from './screens/FavoritesScreen';
@@ -14,21 +14,26 @@ import { SessionEndScreen } from './screens/SessionEndScreen';
 import { SearchScreen } from './screens/SearchScreen';
 import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { SettingsDetailScreen } from './screens/SettingsDetailScreen';
 import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { HomeShareOverlay } from './components/HomeShareOverlay';
 import { StatsShareOverlay } from './components/StatsShareOverlay';
 import { MarkdownGuideModal } from './components/MarkdownGuideModal';
 import { TabBar } from './components/TabBar';
-import { getSettings, getStatistics, initializeDatabase, listCards, listDocuments, listFavoriteCards } from './data/repository';
-import type { CardRecord, DocumentRecord, Route, Settings, Statistics, TabKey } from './domain/types';
+import { getSettings, getStatistics, initializeDatabase, listCardGroupsWithCounts, listCards, listDocuments, listFavoriteCards, listFolders, updateSetting } from './data/repository';
+import type { CardGroupWithCount, CardRecord, DocumentRecord, FolderRecord, KnowledgeListMode, Route, Settings, SettingsSection, Statistics, TabKey } from './domain/types';
+import { routeEquals } from './utils/navigation';
 import { appFonts } from './theme/fonts';
 import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContext';
 import { palette, radius } from './theme/tokens';
+import { AppAlertHost } from './components/AppAlert';
+import { OverlayHost } from './components/AppOverlay';
 
 const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, todayReviews: 0, goal: 10, streakDays: 0, week: [], documents: 0, dueCount: 0, recentCount: 0, fuzzyCount: 0, clearCount: 0, forgotCount: 0, weakCount: 0, dueWeakCount: 0, tomorrowCount: 0 };
 const initialSettings: Settings = {
   sessionCardCount: 10,
+  reviewBatchSize: 50,
   fontSize: 18,
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
@@ -39,6 +44,7 @@ const initialSettings: Settings = {
   homeBackgroundImageUrl: HOME_BACKGROUND_IMAGE_URL,
   homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
+  knowledgeListMode: 'folders',
 };
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
@@ -46,7 +52,7 @@ const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof ty
   review: { title: '复习', subtitle: 'Spaced Review', icon: 'repeat-outline' },
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
-  stats: { title: '我的', subtitle: 'My Learning', icon: 'person-outline' },
+  stats: { title: '我的', subtitle: 'My Learning', icon: 'share-social-outline' },
   settings: { title: '设置', subtitle: '阅读偏好', icon: 'settings-outline' },
 };
 
@@ -63,6 +69,8 @@ export default function App() {
   const [documents, setDocuments] = React.useState<DocumentRecord[]>([]);
   const [cards, setCards] = React.useState<CardRecord[]>([]);
   const [favorites, setFavorites] = React.useState<CardRecord[]>([]);
+  const [folders, setFolders] = React.useState<FolderRecord[]>([]);
+  const [cardGroups, setCardGroups] = React.useState<CardGroupWithCount[]>([]);
   const [error, setError] = React.useState('');
   // 分享海报挂在 App 主窗口层级渲染：整屏截图只能捕获主窗口，
   // 放进 <Modal>（独立 Dialog 窗口）里的内容截不到。
@@ -74,20 +82,31 @@ export default function App() {
   // 知识库页头按钮：Markdown 导入格式说明。
   const [mdGuideOpen, setMdGuideOpen] = React.useState(false);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
+  // Tab 保活：记录访问过的 Tab，首次访问才挂载，之后用 display 切换保留滚动位置与已加载数据。
+  const [visitedTabs, setVisitedTabs] = React.useState<ReadonlySet<TabKey>>(() => new Set<TabKey>(['home']));
+  // 设置二级页最后进入的分类：路由切回 tabs 后，退场动画期间仍需渲染该分类（ref 需在早退分支前声明）。
+  const lastDetailSection = React.useRef<SettingsSection>('reading');
+  if (route.name === 'settingsDetail') {
+    lastDetailSection.current = route.section;
+  }
 
   const refresh = React.useCallback(async () => {
-    const [nextSettings, nextStats, nextDocs, nextCards, nextFavorites] = await Promise.all([
+    const [nextSettings, nextStats, nextDocs, nextCards, nextFavorites, nextFolders, nextGroups] = await Promise.all([
       getSettings(),
       getStatistics(),
       listDocuments(),
       listCards(80),
       listFavoriteCards(),
+      listFolders(),
+      listCardGroupsWithCounts(),
     ]);
     setSettings(nextSettings);
     setStats(nextStats);
     setDocuments(nextDocs);
     setCards(nextCards);
     setFavorites(nextFavorites);
+    setFolders(nextFolders);
+    setCardGroups(nextGroups);
   }, []);
 
   // 刷卡会话中的 get/收藏/批注高频触发刷新：合并为一次延迟刷新，
@@ -101,13 +120,25 @@ export default function App() {
     }, 1200);
   }, [refresh]);
 
+  // 「我的」页目标卡快捷设置：写库后立即完整刷新（目标、连续天数即时生效）。
+  const updateDailyGoal = React.useCallback(async (goal: number) => {
+    await updateSetting('dailyGetGoal', goal);
+    await refresh();
+  }, [refresh]);
+
+  // 知识库列表展示方式（文件夹 / 文档）：写库持久化后刷新。
+  const updateKnowledgeListMode = React.useCallback(async (mode: KnowledgeListMode) => {
+    await updateSetting('knowledgeListMode', mode);
+    await refresh();
+  }, [refresh]);
+
   React.useEffect(() => () => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
   }, []);
 
-  // 压栈跳转：把当前页面记入历史（同页重复跳转不压栈，历史上限 25 条防无限增长）。
+  // 压栈跳转：把当前页面记入历史（结构化判等，同页重复跳转不压栈，历史上限 25 条防无限增长）。
   const navigate = React.useCallback((next: Route) => {
-    setNav((s) => (JSON.stringify(s.current) === JSON.stringify(next) ? s : { current: next, history: [...s.history.slice(-24), s.current] }));
+    setNav((s) => (routeEquals(s.current, next) ? s : { current: next, history: [...s.history.slice(-24), s.current] }));
   }, []);
 
   // 返回上一次的页面；没有历史时回到首页（首页再返回则交给系统退出应用）。
@@ -201,6 +232,8 @@ export default function App() {
               onDone={() => setSharingCard(null)}
             />
           ) : null}
+          {/* 全局弹窗宿主：每个路由分支都要挂载，否则该分支里 showAlert 只入队不弹出 */}
+          <AppAlertHost fontFamily={settings.fontFamily} />
         </SafeAreaProvider>
       </ThemeProvider>
     );
@@ -219,6 +252,7 @@ export default function App() {
             onEnd={(summary) => { void refresh(); replace({ name: 'sessionEnd', summary }); }}
             onStartReview={() => navigate({ name: 'review' })}
           />
+          <AppAlertHost fontFamily={settings.fontFamily} />
         </SafeAreaProvider>
       </ThemeProvider>
     );
@@ -237,6 +271,7 @@ export default function App() {
             onChanged={refreshSoon}
             onStartSession={() => navigate({ name: 'session' })}
           />
+          <AppAlertHost fontFamily={settings.fontFamily} />
         </SafeAreaProvider>
       </ThemeProvider>
     );
@@ -253,48 +288,84 @@ export default function App() {
             onContinue={() => replace({ name: 'session' })}
             onStartReview={() => navigate({ name: 'review' })}
           />
+          <AppAlertHost fontFamily={settings.fontFamily} />
         </SafeAreaProvider>
       </ThemeProvider>
     );
   }
 
   const activeTab = route.tab;
+  // 设置二级页：以推入浮层叠加在 Tab 层之上，Tab 树全程保持挂载（跳转/返回均为滑动转场，
+  // 不再有整树卸载重建导致的闪屏）。
+  const detailActive = route.name === 'settingsDetail';
+  // 渲染期补录当前 Tab（带守卫，只触发一次重渲染），随后所有已访问 Tab 保持挂载。
+  if (!visitedTabs.has(activeTab)) {
+    setVisitedTabs((prev) => new Set(prev).add(activeTab));
+  }
+  const tabPageData = {
+    stats,
+    settings,
+    documents,
+    cards,
+    favorites,
+    folders,
+    cardGroups,
+    navigate,
+    goHome,
+    refresh,
+    setSettings,
+    onShare: setSharingCard,
+    onShareStats: () => setSharingStats(true),
+    onUpdateGoal: (goal: number) => { void updateDailyGoal(goal); },
+    onChangeListMode: (mode: KnowledgeListMode) => { void updateKnowledgeListMode(mode); },
+  };
+  const nonHomeTabs: TabKey[] = ['review', 'knowledge', 'favorites', 'stats', 'settings'];
   return (
     <ThemeProvider settings={settings}>
       <SafeAreaProvider>
         <StatusBar style={activeTab === 'home' || theme.dark ? 'light' : 'dark'} />
         <View style={[styles.app, { backgroundColor: theme.paper }] }>
           <View style={styles.appBody}>
-            {activeTab === 'home' ? (
-              <HomeScreen
-                stats={stats}
-                settings={settings}
-                onStartSession={(startCardId) => navigate({ name: 'session', startCardId })}
-                onStartAheadReview={() => navigate({ name: 'review', mode: 'ahead' })}
-                onNavigate={(tab) => navigate({ name: 'tabs', tab })}
-                onSearch={() => navigate({ name: 'search' })}
-                onShareHome={setSharingHome}
-              />
-            ) : (
-              <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
-                <PageHeader
-                  tab={activeTab}
-                  onBack={goBack}
-                  onIconPress={
-                    activeTab === 'review'
-                      ? () => navigate({ name: 'review', mode: 'ahead' })
-                      : activeTab === 'knowledge'
-                        ? () => setMdGuideOpen(true)
-                        : undefined
-                  }
+            <View style={[styles.tabPage, activeTab !== 'home' && styles.tabPageHidden]}>
+              {visitedTabs.has('home') ? (
+                <HomeScreen
+                  stats={stats}
+                  settings={settings}
+                  onStartSession={(startCardId) => navigate({ name: 'session', startCardId })}
+                  onStartAheadReview={() => navigate({ name: 'review', mode: 'ahead' })}
+                  onNavigate={(tab) => navigate({ name: 'tabs', tab })}
+                  onSearch={() => navigate({ name: 'search' })}
+                  onShareHome={setSharingHome}
                 />
-                <View style={styles.pageBody}>
-                  {renderPage(activeTab, { stats, settings, documents, cards, favorites, navigate, goHome, refresh, setSettings, onShare: setSharingCard, onShareStats: () => setSharingStats(true) })}
-                </View>
-              </SafeAreaView>
-            )}
+              ) : null}
+            </View>
+            {nonHomeTabs.map((tab) => (
+              <View key={tab} style={[styles.tabPage, activeTab !== tab && styles.tabPageHidden]}>
+                {visitedTabs.has(tab) ? (
+                  <SafeAreaView style={[styles.page, { backgroundColor: theme.paper }]} edges={['top']}>
+                    <PageHeader
+                      tab={tab}
+                      onIconPress={
+                        tab === 'review'
+                          ? () => navigate({ name: 'review', mode: 'ahead' })
+                          : tab === 'knowledge'
+                            ? () => setMdGuideOpen(true)
+                            : tab === 'stats'
+                              ? () => setSharingStats(true)
+                              : undefined
+                      }
+                    />
+                    <View style={styles.pageBody}>
+                      {renderPage(tab, tabPageData)}
+                    </View>
+                  </SafeAreaView>
+                ) : null}
+              </View>
+            ))}
           </View>
           <TabBar active={activeTab} onChange={(tab) => navigate({ name: 'tabs', tab })} />
+          {/* 页面层级编辑浮层（文档 / 分组 / 手写卡 / 批注）经传送门渲染在这里，保证盖住悬浮 Tab 栏 */}
+          <OverlayHost />
           {sharingCard ? (
             <ShareCardOverlay
               key={sharingCard.id}
@@ -324,22 +395,84 @@ export default function App() {
               onClose={() => setMdGuideOpen(false)}
             />
           ) : null}
+          {/* 设置二级页推入浮层：盖住 Tab 栏与页面内容 */}
+          <PushOverlay active={detailActive}>
+            <SettingsDetailScreen
+              section={lastDetailSection.current}
+              settings={settings}
+              onSettingsChanged={setSettings}
+              onReset={() => { void refresh(); goHome(); }}
+              onCardImagesReset={() => { void refresh(); }}
+              onDataChanged={() => { void refresh(); }}
+              onBack={goBack}
+            />
+          </PushOverlay>
+          {/* 全局自定义提示弹窗（iOS 风格）：以独立原生 Modal 窗口弹出，盖在所有页面与其他 Modal 之上 */}
+          <AppAlertHost fontFamily={settings.fontFamily} />
         </View>
       </SafeAreaProvider>
     </ThemeProvider>
   );
 }
 
-function PageHeader({ tab, onBack, onIconPress }: { tab: TabKey; onBack: () => void; onIconPress?: () => void }) {
+// 全屏推入浮层：二级页从右侧滑入覆盖 Tab 层，返回时滑出后再卸载。
+// active 由路由驱动；路由切走（active = false）时继续挂载播完退场动画，
+// 下层 Tab 树因此不需要重建，返回时不会闪屏。
+function PushOverlay({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const [mounted, setMounted] = React.useState(active);
+  const progress = React.useRef(new Animated.Value(active ? 1 : 0)).current;
+  // 动画代数：快速连续跳转/返回时，让被打断的旧动画的完成回调失效。
+  const generation = React.useRef(0);
+  const animation = React.useRef<Animated.CompositeAnimation | null>(null);
+
+  React.useEffect(() => {
+    const gen = generation.current + 1;
+    generation.current = gen;
+    animation.current?.stop();
+    animation.current = Animated.timing(progress, {
+      toValue: active ? 1 : 0,
+      duration: active ? 280 : 240,
+      easing: active ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animation.current.start(() => {
+      if (!active && gen === generation.current) setMounted(false);
+    });
+    return () => {
+      animation.current?.stop();
+    };
+  }, [active, progress]);
+
+  // active 时无条件渲染（与路由变更同步挂载，入场动画从屏幕右缘开始）；
+  // 退场动画播完（mounted 置 false）后才真正卸载。
+  if (!mounted && !active) return null;
+  const width = Dimensions.get('window').width;
+  return (
+    <Animated.View
+      style={[
+        styles.pushOverlay,
+        { transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [width, 0] }) }] },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+// 各 Tab 页头右上角按钮的无障碍标签（有 onIconPress 的 Tab 才会用到）。
+const pageIconLabels: Partial<Record<TabKey, string>> = {
+  review: '提前复习',
+  knowledge: 'Markdown 格式说明',
+  stats: '分享学习档案',
+};
+
+function PageHeader({ tab, onIconPress }: { tab: TabKey; onIconPress?: () => void }) {
   const meta = pageMeta[tab];
   const theme = useAppTheme();
-  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明）。
-  const iconLabel = tab === 'review' ? '提前复习' : tab === 'knowledge' ? 'Markdown 格式说明' : meta.title;
+  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明，我的 = 分享档案）。
+  const iconLabel = pageIconLabels[tab] ?? meta.title;
   return (
     <View style={[styles.headerBar, { backgroundColor: theme.paper }] }>
-      <Pressable onPress={onBack} style={({ pressed }) => [styles.backButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
-        <Ionicons name="chevron-back" size={24} color={theme.ink} />
-      </Pressable>
       <View style={styles.headerTitleWrap}>
         <Text style={[styles.headerSubtitle, { color: theme.inkMuted }]}>{meta.subtitle}</Text>
         <Text style={[styles.headerTitle, { color: theme.ink }]}>{meta.title}</Text>
@@ -370,12 +503,16 @@ function renderPage(
     documents: DocumentRecord[];
     cards: CardRecord[];
     favorites: CardRecord[];
+    folders: FolderRecord[];
+    cardGroups: CardGroupWithCount[];
     navigate: (next: Route) => void;
     goHome: () => void;
     refresh: () => Promise<void>;
     setSettings: React.Dispatch<React.SetStateAction<Settings>>;
     onShare: (card: CardRecord) => void;
     onShareStats: () => void;
+    onUpdateGoal: (goal: number) => void;
+    onChangeListMode: (mode: KnowledgeListMode) => void;
   },
 ) {
   switch (tab) {
@@ -396,24 +533,24 @@ function renderPage(
         <KnowledgeScreen
           documents={data.documents}
           cards={data.cards}
+          folders={data.folders}
+          cardGroups={data.cardGroups}
           settings={data.settings}
           onImported={() => void data.refresh()}
           onStartSession={() => data.navigate({ name: 'session' })}
           onShare={data.onShare}
+          onChangeListMode={data.onChangeListMode}
         />
       );
     case 'favorites':
       return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
-      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} onShareStats={data.onShareStats} />;
+      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} onShareStats={data.onShareStats} onUpdateGoal={data.onUpdateGoal} />;
     case 'settings':
       return (
         <SettingsScreen
           settings={data.settings}
-          onSettingsChanged={(next) => setImmediateSettings(data.setSettings, next)}
-          onReset={() => { void data.refresh(); data.goHome(); }}
-          onCardImagesReset={() => { void data.refresh(); }}
-          onDataChanged={() => { void data.refresh(); }}
+          onOpenSection={(section) => data.navigate({ name: 'settingsDetail', section, tab })}
         />
       );
     case 'home':
@@ -422,23 +559,28 @@ function renderPage(
   }
 }
 
-function setImmediateSettings(setSettings: React.Dispatch<React.SetStateAction<Settings>>, settings: Settings) {
-  setSettings(settings);
-}
-
 const styles = StyleSheet.create({
   app: { flex: 1, backgroundColor: palette.paper },
   appBody: { flex: 1 },
+  tabPage: { flex: 1 },
+  tabPageHidden: { display: 'none' },
   page: { flex: 1, backgroundColor: palette.paper },
   pageBody: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: palette.paper },
   centerText: { color: palette.inkMuted, fontSize: 15, fontWeight: '700' },
   errorTitle: { color: palette.ink, fontSize: 28, fontWeight: '900' },
   headerBar: { height: 72, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: palette.paper },
-  backButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line },
   headerTitleWrap: { flex: 1 },
   headerSubtitle: { color: palette.inkMuted, fontSize: 12, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' },
   headerTitle: { color: palette.ink, fontSize: 28, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8 },
   headerIcon: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.paperElevated, borderWidth: 1, borderColor: palette.line },
   pressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
+  // 二级页推入浮层：全屏覆盖，左侧投影在滑动时体现层级深度。
+  pushOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    elevation: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+  },
 });

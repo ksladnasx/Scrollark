@@ -4,7 +4,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
 import { CardDetailModal } from '../components/CardDetailModal';
-import { searchCards } from '../data/repository';
+import { deleteCard, searchCards } from '../data/repository';
 import type { CardRecord, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { radius } from '../theme/tokens';
@@ -73,6 +73,12 @@ export function SearchScreen({ settings, onBack, onShare }: Props) {
     if (editingCardId !== null) setSelectedCardId(editingCardId);
     setEditingCardId(null);
   }, [editingCardId, refreshResults]);
+
+  // 删除单张卡片（手写卡与文档生成的卡通用）：写库后重新搜索，结果里即时移除。
+  const handleDeleteCard = React.useCallback(async (card: CardRecord) => {
+    await deleteCard(card.id);
+    refreshResults();
+  }, [refreshResults]);
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: theme.paper }]} edges={['top']}>
@@ -173,6 +179,7 @@ export function SearchScreen({ settings, onBack, onShare }: Props) {
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
         onShare={onShare}
+        onDelete={handleDeleteCard}
       />
     </SafeAreaView>
   );

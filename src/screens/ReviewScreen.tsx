@@ -4,7 +4,7 @@ import { BackHandler, FlatList, Pressable, StyleSheet, Text, useWindowDimensions
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppButton } from '../components/AppButton';
 import { KnowledgeCard } from '../components/KnowledgeCard';
-import { buildAheadReviewCards, buildReviewCards, rateCard } from '../data/repository';
+import { buildAheadReviewCards, buildReviewCards, rateCard, updateSetting } from '../data/repository';
 import type { CardRecord, MasteryRating, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { masteryColors, palette, radius } from '../theme/tokens';
@@ -33,6 +33,9 @@ const REVIEW_RATINGS: { rating: MasteryRating; label: string; hint: string }[] =
   { rating: 3, label: '记得', hint: '间隔拉长' },
 ];
 
+// 到期复习的单次数量档位（选择会持久化到设置）；提前复习固定 30 张，不显示选择器。
+const REVIEW_BATCH_SIZES = [10, 20, 50] as const;
+
 export function ReviewScreen({ settings, mode = 'due', tomorrowCount, onClose, onChanged, onStartSession }: Props) {
   const theme = useAppTheme();
   const { height, width } = useWindowDimensions();
@@ -41,6 +44,8 @@ export function ReviewScreen({ settings, mode = 'due', tomorrowCount, onClose, o
   const [cards, setCards] = React.useState<CardRecord[]>([]);
   const [index, setIndex] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
+  // 单次复习数量：以进入页面时的设置为初值，页内切换立即生效并写回设置。
+  const [limit, setLimit] = React.useState(() => (mode === 'due' ? settings.reviewBatchSize : 30));
   // 已揭示答案的卡片：复习以「主动回忆」为先，揭示后才出现评级按钮。
   const [revealedIds, setRevealedIds] = React.useState<ReadonlySet<number>>(() => new Set());
   const listRef = React.useRef<FlatList<ReviewItem>>(null);
@@ -53,15 +58,23 @@ export function ReviewScreen({ settings, mode = 'due', tomorrowCount, onClose, o
   const load = React.useCallback(async () => {
     setLoading(true);
     finishedRef.current = false;
-    const next = mode === 'ahead' ? await buildAheadReviewCards(30) : await buildReviewCards(50);
+    const next = mode === 'ahead' ? await buildAheadReviewCards(30) : await buildReviewCards(limit);
     setCards(next);
     setIndex(0);
     setRevealedIds(new Set());
     setLoading(false);
     requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
-  }, [mode]);
+  }, [limit, mode]);
 
   React.useEffect(() => { void load(); }, [load]);
+
+  // 切换单次数量：本地立即重拉，同时写回设置并让 App 层同步（设置持久化，下次进入仍生效）。
+  const handleLimitChange = React.useCallback((nextLimit: number) => {
+    if (nextLimit === limit) return;
+    setLimit(nextLimit);
+    void updateSetting('reviewBatchSize', nextLimit);
+    onChanged();
+  }, [limit, onChanged]);
 
   const updateLocalCard = React.useCallback((cardId: number, patch: Partial<CardRecord>) => {
     setCards((prev) => prev.map((item) => (item.id === cardId ? { ...item, ...patch } : item)));
@@ -306,6 +319,24 @@ export function ReviewScreen({ settings, mode = 'due', tomorrowCount, onClose, o
             <Pressable accessibilityRole="button" accessibilityLabel="退出复习" onPress={onClose} style={({ pressed }) => [styles.close, { backgroundColor: 'rgba(0,0,0,0.34)' }, pressed && styles.pressed]}>
               <Ionicons name="close" size={22} color="#FFFFFF" />
             </Pressable>
+            {mode === 'due' ? (
+              <View style={styles.limitChips} pointerEvents="box-none">
+                {REVIEW_BATCH_SIZES.map((size) => {
+                  const active = size === limit;
+                  return (
+                    <Pressable
+                      key={size}
+                      accessibilityRole="button"
+                      accessibilityLabel={`单次复习 ${size} 张`}
+                      onPress={() => handleLimitChange(size)}
+                      style={({ pressed }) => [styles.limitChip, { backgroundColor: active ? theme.accent : 'rgba(0,0,0,0.34)' }, pressed && !active && styles.pressed]}
+                    >
+                      <Text style={[styles.limitChipText, { color: active ? theme.paper : '#FFFFFF' }]}>{size}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
             <View style={styles.progressPill}>
               <Text style={styles.progressText}>{Math.min(index + 1, cards.length)}/{cards.length}</Text>
             </View>
@@ -339,6 +370,9 @@ const styles = StyleSheet.create({
   progressFill: { height: 3 },
   topBar: { position: 'absolute', top: 10, left: 16, right: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   progressPill: { minWidth: 58, height: 34, paddingHorizontal: 12, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.34)' },
+  limitChips: { flexDirection: 'row', gap: 6 },
+  limitChip: { minWidth: 42, height: 34, paddingHorizontal: 10, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  limitChipText: { fontSize: 12, fontWeight: '900' },
   progressText: { color: '#FFFFFF', fontSize: 13, fontWeight: '900' },
   endPage: { flex: 1, padding: 28, alignItems: 'center', justifyContent: 'center', gap: 14 },
   endTitle: { fontSize: 34, lineHeight: 40, fontWeight: '900', letterSpacing: -1 },

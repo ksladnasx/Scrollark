@@ -4,19 +4,33 @@ import { AnnotationEditor } from '../components/AnnotationEditor';
 import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import type { CardRecord, Settings } from '../domain/types';
+import { deleteCard, resetCardReviewProgress } from '../data/repository';
+import { setOverlaySlot } from '../components/AppOverlay';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
 
 type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void; onShare?: (card: CardRecord) => void };
 
-const CARD_ITEM_HEIGHT = 370;
+const CARD_ITEM_HEIGHT = 360;
 
 export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) {
   const theme = useAppTheme();
   const fontFamily = settings.fontFamily;
   const [selectedCardId, setSelectedCardId] = React.useState<number | null>(null);
   const [editingCardId, setEditingCardId] = React.useState<number | null>(null);
+
+  // 重置复习进度：写库后刷新列表（App 层 refresh），详情弹窗里的状态随之更新。
+  const handleResetProgress = React.useCallback(async (card: CardRecord) => {
+    await resetCardReviewProgress(card.id);
+    onChanged?.();
+  }, [onChanged]);
+
+  // 删除单张卡片（手写卡与文档生成的卡通用）：写库后刷新列表，收藏视图里该卡随之消失。
+  const handleDeleteCard = React.useCallback(async (card: CardRecord) => {
+    await deleteCard(card.id);
+    onChanged?.();
+  }, [onChanged]);
   // 按 id 派生：批注在编辑器里保存后，列表刷新时详情/编辑内容自动跟随更新。
   const selectedCard = selectedCardId === null ? null : cards.find((card) => card.id === selectedCardId) ?? null;
   const editingCard = editingCardId === null ? null : cards.find((card) => card.id === editingCardId) ?? null;
@@ -43,6 +57,16 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
     </Pressable>
   ), [settings]);
 
+  // 批注编辑浮层经传送门渲染到 App 根部（盖住悬浮 Tab 栏），本页每次渲染同步最新节点。
+  React.useEffect(() => {
+    setOverlaySlot('favorites-annotation', () => (
+      editingCard ? (
+        <AnnotationEditor card={editingCard} settings={settings} onClose={handleEditorClose} onSaved={handleEditorSaved} />
+      ) : null
+    ));
+    return () => setOverlaySlot('favorites-annotation', null);
+  });
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.paper }}>
       <FlatList
@@ -61,15 +85,14 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
         }
         ListEmptyComponent={<Empty title="还没有收藏" body="在刷卡时点击收藏按钮，重要内容会出现在这里。" />}
       />
-      {editingCard ? (
-        <AnnotationEditor card={editingCard} settings={settings} onClose={handleEditorClose} onSaved={handleEditorSaved} />
-      ) : null}
       <CardDetailModal
         card={selectedCard}
         settings={settings}
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
         onShare={onShare}
+        onResetProgress={handleResetProgress}
+        onDelete={handleDeleteCard}
       />
     </View>
   );

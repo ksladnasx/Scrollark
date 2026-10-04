@@ -10,10 +10,12 @@ type Props = {
   icon?: keyof typeof Ionicons.glyphMap;
   variant?: 'dark' | 'light' | 'ghost';
   loading?: boolean;
+  // 紧凑规格：用于卡片内右列的成组小按钮。
+  compact?: boolean;
   style?: ViewStyle;
 };
 
-export function AppButton({ label, onPress, icon, variant = 'dark', loading, style }: Props) {
+export function AppButton({ label, onPress, icon, variant = 'dark', loading, compact, style }: Props) {
   const theme = useAppTheme();
   const foreground = variant === 'dark' ? theme.paper : theme.ink;
   const background = variant === 'dark' ? theme.accent : variant === 'light' ? theme.paperElevated : 'rgba(255,255,255,0.22)';
@@ -22,11 +24,11 @@ export function AppButton({ label, onPress, icon, variant = 'dark', loading, sty
       accessibilityRole="button"
       onPress={onPress}
       disabled={loading}
-      style={({ pressed }) => [styles.base, styles[variant], { backgroundColor: background }, variant === 'light' && { borderWidth: 1, borderColor: theme.line }, pressed && styles.pressed, style]}
+      style={({ pressed }) => [styles.base, styles[variant], compact && styles.compact, { backgroundColor: background }, variant === 'light' && { borderWidth: 1, borderColor: theme.line }, pressed && styles.pressed, style]}
     >
       {loading ? <ActivityIndicator color={foreground} /> : null}
-      {!loading && icon ? <Ionicons name={icon} size={18} color={foreground} /> : null}
-      <Text style={[styles.label, { color: foreground }]}>{label}</Text>
+      {!loading && icon ? <Ionicons name={icon} size={compact ? 15 : 18} color={foreground} /> : null}
+      <Text style={[styles.label, compact && styles.compactLabel, { color: foreground }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -40,6 +42,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
+  },
+  compact: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    gap: 6,
   },
   dark: {
     backgroundColor: palette.accent,
@@ -60,6 +67,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  compactLabel: {
+    fontSize: 13,
   },
   darkLabel: {
     color: palette.paper,

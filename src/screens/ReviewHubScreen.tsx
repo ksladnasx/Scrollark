@@ -8,7 +8,9 @@ import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { RingProgress } from '../components/RingProgress';
 import type { CardRecord, Settings, Statistics } from '../domain/types';
-import { getUpcomingReviewCounts, listCardsByStatus, type ReviewStatusFilter } from '../data/repository';
+import { getLastReviewSession, getUpcomingReviewCounts, listCardsByStatus, resetCardReviewProgress, deleteCard, type LastReviewSession, type ReviewStatusFilter } from '../data/repository';
+import { setOverlaySlot } from '../components/AppOverlay';
+import { formatRelativeDayLabel } from '../utils/date';
 import { useAppTheme } from '../theme/ThemeContext';
 import { masteryColors, radius } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
@@ -55,6 +57,22 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
     forgot: stats.forgotCount,
   };
 
+  // 上次复习小结：从 rate-* 事件聚合最近一轮（评级发生/今天有新评级时刷新）。
+  const [lastReview, setLastReview] = React.useState<LastReviewSession | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    getLastReviewSession()
+      .then((session) => {
+        if (alive) setLastReview(session);
+      })
+      .catch(() => {
+        if (alive) setLastReview(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [stats.todayReviews]);
+
   // 状态下钻：点状态环拉取该状态的卡片列表。详情弹窗与批注编辑器都渲染在页面层级——
   // 批注编辑器不做原生 Modal（键盘避让要求它留在页面树里，见 AnnotationEditor 的说明），
   // 编辑期间临时隐藏列表弹窗，结束后回到列表再叠开详情，与收藏页的流程一致。
@@ -91,6 +109,20 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
     setEditingCardId(null);
   }, []);
 
+  // 重置进度：写库 → 刷新下钻列表 → 通知 App 层刷新统计与状态环。
+  const handleResetProgress = React.useCallback(async (card: CardRecord) => {
+    await resetCardReviewProgress(card.id);
+    await reloadStatus();
+    onDataChanged?.();
+  }, [onDataChanged, reloadStatus]);
+
+  // 删除单张卡片（手写卡与文档生成的卡通用）：写库 → 刷新下钻列表 → 通知 App 层刷新统计。
+  const handleDeleteCard = React.useCallback(async (card: CardRecord) => {
+    await deleteCard(card.id);
+    await reloadStatus();
+    onDataChanged?.();
+  }, [onDataChanged, reloadStatus]);
+
   const selectedCard = selectedCardId === null ? null : statusCards?.find((card) => card.id === selectedCardId) ?? null;
   const editingCard = editingCardId === null ? null : statusCards?.find((card) => card.id === editingCardId) ?? null;
 
@@ -107,39 +139,70 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
     setEditingCardId(null);
   }, [editingCardId, onDataChanged, reloadStatus]);
 
+  // 批注编辑浮层经传送门渲染到 App 根部（盖住悬浮 Tab 栏），本页每次渲染同步最新节点。
+  React.useEffect(() => {
+    setOverlaySlot('reviewhub-annotation', () => (
+      editingCard ? (
+        <AnnotationEditor card={editingCard} settings={settings} onClose={handleEditorClose} onSaved={handleEditorSaved} />
+      ) : null
+    ));
+    return () => setOverlaySlot('reviewhub-annotation', null);
+  });
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.paper }}>
       <ScrollView style={{ backgroundColor: theme.paper }} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
 
         <View style={[styles.heroCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-          <RingProgress size={104} strokeWidth={10} progress={total > 0 ? done / total : 0} color={ringColor} trackColor={theme.paperSoft}>
-            <View style={styles.ringCenter}>
-              <Text style={[styles.ringValue, { color: theme.ink, fontFamily }]}>{done}</Text>
-              <Text style={[styles.ringTotal, { color: theme.inkMuted, fontFamily }]}>/ {total}</Text>
-            </View>
-          </RingProgress>
-          <View style={styles.heroRight}>
-            <Text style={[styles.heroLabel, { color: theme.inkMuted, fontFamily }]}>今日复习进度</Text>
-            <Text style={[styles.heroCaption, { color: theme.ink, fontFamily }]}>
-              {total > 0 ? `已完成 ${pct}%` : '今天还没有复习记录'}
-            </Text>
-            <Text style={[styles.heroMeta, { color: theme.inkMuted, fontFamily }]}>
-              {stats.dueCount > 0
-                ? `今日待复习 ${stats.dueCount} 张`
-                : total > 0
-                  ? '今日到期卡片已全部复习完'
-                  : '到期后这里会显示今日进度'}
-            </Text>
+          {/* 上排：进度环 → 虚指示线 → 百分比（小号弱化）→ 操作按钮；底部为待复习说明 */}
+          <View style={styles.heroTop}>
+            <RingProgress size={100} strokeWidth={10} progress={total > 0 ? done / total : 0} color={ringColor} trackColor={theme.paperSoft}>
+              <View style={styles.ringCenter}>
+                <Text style={[styles.ringValue, { color: theme.ink, fontFamily }]}>{done}</Text>
+                <Text style={[styles.ringTotal, { color: theme.inkMuted, fontFamily }]}>/ {total}</Text>
+              </View>
+            </RingProgress>
+            <View style={[styles.heroLeader, { borderTopColor: theme.line }]} />
+            <Text style={[styles.heroPct, { color: theme.inkMuted, fontFamily }]}>{total > 0 ? `${pct}%` : '0%'}</Text>
             <View style={styles.heroActions}>
-              <AppButton label="提前复习" icon="time-outline" variant="light" onPress={onStartAheadReview} style={styles.heroActionButton} />
+              <AppButton label="提前复习" icon="time-outline" variant="light" compact onPress={onStartAheadReview} style={styles.heroActionButton} />
               {stats.dueCount > 0 ? (
-                <AppButton label={`继续复习 · ${stats.dueCount} 张`} icon="repeat" onPress={onStartReview} style={styles.heroActionButton} />
+                <AppButton label="继续复习" icon="repeat" compact onPress={onStartReview} style={styles.heroActionButton} />
               ) : (
-                <AppButton label="去 GET 新卡" icon="flash-outline" onPress={onStartGet} style={styles.heroActionButton} />
+                <AppButton label="去 GET 新卡" icon="flash-outline" compact onPress={onStartGet} style={styles.heroActionButton} />
               )}
             </View>
           </View>
+          <Text style={[styles.heroMeta, { color: theme.inkMuted, fontFamily }]}>
+            {stats.dueCount > 0
+              ? `今日待复习 ${stats.dueCount} 张`
+              : total > 0
+                ? '今日到期卡片已全部复习完'
+                : '到期后这里会显示今日进度'}
+          </Text>
         </View>
+
+        {lastReview ? (
+          <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+            <View style={styles.cardHead}>
+              <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily }]}>上次复习</Text>
+              <Text style={[styles.cardHeadMeta, { color: theme.inkMuted, fontFamily }]}>{formatRelativeDayLabel(lastReview.lastAt)}</Text>
+            </View>
+            <View style={styles.lastReviewRow}>
+              {([
+                { label: '记得', count: lastReview.clear, color: masteryColors[3] },
+                { label: '模糊', count: lastReview.fuzzy, color: masteryColors[2] },
+                { label: '不记得', count: lastReview.forgot, color: masteryColors[1] },
+              ]).map((item) => (
+                <View key={item.label} style={styles.lastReviewStat}>
+                  <View style={[styles.statusDot, { backgroundColor: item.color }]} />
+                  <Text style={[styles.lastReviewValue, { color: theme.ink, fontFamily }]}>{item.count}</Text>
+                  <Text style={[styles.lastReviewLabel, { color: theme.inkMuted, fontFamily }]}>{item.label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         <UpcomingCard fontFamily={fontFamily} />
 
@@ -190,15 +253,14 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
           onCardPress={(card) => setSelectedCardId(card.id)}
         />
       ) : null}
-      {editingCard ? (
-        <AnnotationEditor card={editingCard} settings={settings} onClose={handleEditorClose} onSaved={handleEditorSaved} />
-      ) : null}
       <CardDetailModal
         card={selectedCard}
         settings={settings}
         onClose={() => setSelectedCardId(null)}
         onEditAnnotation={(card) => { setSelectedCardId(null); setEditingCardId(card.id); }}
         onShare={onShare}
+        onResetProgress={handleResetProgress}
+        onDelete={handleDeleteCard}
       />
     </View>
   );
@@ -320,16 +382,16 @@ function StatusCardsModal({ status, cards, settings, onClose, onCardPress }: {
 
 const styles = StyleSheet.create({
   wrap: { padding: 18, paddingBottom: 140, gap: 14 },
-  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 14, flexDirection: 'row', alignItems: 'center' },
-  heroRight: { flex: 1, gap: 3 },
-  heroActions: { gap: 8, marginTop: 10 },
-  heroActionButton: { minHeight: 40, paddingHorizontal: 12 },
-  heroLabel: { fontSize: 12, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' },
-  ringCenter: { alignItems: 'center' },
-  ringValue: { fontSize: 26, lineHeight: 30, fontWeight: '900', letterSpacing: -0.6 },
-  ringTotal: { fontSize: 11, fontWeight: '800' },
-  heroCaption: { fontSize: 16, fontWeight: '900', marginTop: 2 },
-  heroMeta: { fontSize: 12, fontWeight: '700' },
+  heroCard: { borderRadius: radius.xl, borderWidth: 1, padding: 16, gap: 12 },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  heroLeader: { flex: 1, minWidth: 12, borderTopWidth: 2, borderStyle: 'dashed' },
+  heroPct: { fontSize: 13, lineHeight: 17, fontWeight: '800' },
+  heroActions: { gap: 8, alignItems: 'stretch' },
+  heroActionButton: { minHeight: 42 },
+  ringCenter: { flexDirection: 'row', alignItems: 'flex-end' },
+  ringValue: { fontSize: 17, lineHeight: 20, fontWeight: '900', letterSpacing: -0.3 },
+  ringTotal: { fontSize: 11, lineHeight: 13, fontWeight: '800', marginBottom: 1 },
+  heroMeta: { fontSize: 12, lineHeight: 16, fontWeight: '700' },
   card: { borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 12 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardHeadMeta: { fontSize: 11, fontWeight: '700' },
@@ -350,6 +412,10 @@ const styles = StyleSheet.create({
   upcomingLabel: { fontSize: 10, fontWeight: '700' },
   upcomingEmpty: { fontSize: 12, lineHeight: 19, fontWeight: '600' },
   upcomingLoading: { paddingVertical: 24 },
+  lastReviewRow: { flexDirection: 'row' },
+  lastReviewStat: { flex: 1, alignItems: 'center', gap: 3 },
+  lastReviewValue: { fontSize: 17, fontWeight: '900' },
+  lastReviewLabel: { fontSize: 11, fontWeight: '700' },
   modalWrap: { flex: 1 },
   modalHeader: { height: 72, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   backButton: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },

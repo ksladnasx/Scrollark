@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
+import { extractPreviewImage } from '../utils/markdown';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow } from '../theme/tokens';
 import { AppButton } from './AppButton';
@@ -20,6 +21,8 @@ type Props = {
   recall?: { hidden: boolean; onReveal: () => void };
   onDoubleTapBody?: (pageX: number, pageY: number) => void;
   onEditAnnotation?: () => void;
+  // 提供时紧凑卡片右上角显示红色删除角标（列表页逐张删除入口），删除确认由调用方负责。
+  onDelete?: () => void;
 };
 
 function normalizeTitle(value: string) {
@@ -29,6 +32,8 @@ function normalizeTitle(value: string) {
 function makeCompactPreview(markdown: string, title: string) {
   return stripDuplicatedLeadingTitle(markdown, title)
     .replace(/```[\s\S]*?```/g, ' ')
+    // 行内残留的图片语法（未独立成行的）也不进摘要，避免显示成裸链接。
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
     .replace(/^\s*#{1,6}\s+/gm, '')
     .replace(/^\s*>\s?/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')
@@ -56,7 +61,7 @@ function stripDuplicatedLeadingTitle(markdown: string, title: string) {
 // 深色模式下浅色卡片上的深色字体会不可读：把四个预设色映射到
 // 同色相的浅色变体（调色板各自的深色模式取值），保留用户的选择；
 // 其他自定义颜色按原样使用。浅色模式直接应用所选颜色。
-export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, recall, onDoubleTapBody, onEditAnnotation }: Props) {
+export function KnowledgeCard({ card, settings, compact = false, onClose, footer, titleInHeader = false, showAnnotationPreview = false, recall, onDoubleTapBody, onEditAnnotation, onDelete }: Props) {
   const theme = useAppTheme();
   const meta = [card.h2, card.documentTitle].filter(Boolean).join(' · ');
   const title = card.title || card.h3 || '未命名卡片';
@@ -69,6 +74,8 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
   const titleHeightRef = React.useRef(42);
   const lastBodyTapRef = React.useRef({ time: 0, x: 0, y: 0 });
   const bodyTouchStartRef = React.useRef({ time: 0, x: 0, y: 0 });
+  // 紧凑预览：正文里的第一张图作为缩略图直接显示，其余图片行从文本摘要里剔除。
+  const compactPreview = React.useMemo(() => extractPreviewImage(card.content), [card.content]);
 
   // 双击正文识别（抖音式收藏）：只统计位移小、时长短的点按，不影响滚动与文本选择。
   const handleBodyTouchStart = React.useCallback((event: GestureResponderEvent) => {
@@ -155,9 +162,24 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
         </Pressable>
       ) : null}
       {compact ? (
-        <Text selectable style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]} numberOfLines={showAnnotationPreview && annotation ? 3 : 4} ellipsizeMode="tail">
-          {makeCompactPreview(card.content, title) || '点击查看卡片内容'}
-        </Text>
+        <>
+          {compactPreview.uri ? (
+            <Image
+              source={{ uri: compactPreview.uri }}
+              style={[styles.compactPreviewImage, { backgroundColor: theme.paperSoft }]}
+              resizeMode="cover"
+              accessibilityLabel="卡片配图"
+            />
+          ) : null}
+          <Text
+            selectable
+            style={[styles.previewText, { color: textColor, fontFamily: settings.fontFamily }]}
+            numberOfLines={compactPreview.uri ? 2 : showAnnotationPreview && annotation ? 3 : 4}
+            ellipsizeMode="tail"
+          >
+            {makeCompactPreview(compactPreview.text, title) || (compactPreview.uri ? '图片卡片 · 点击查看' : '点击查看卡片内容')}
+          </Text>
+        </>
       ) : (
         <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={textColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} />
       )}
@@ -166,6 +188,17 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
 
   return (
     <View style={[styles.card, { backgroundColor: theme.card }, compact && [styles.compactCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]]}>
+      {compact && onDelete ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="删除这张卡片"
+          onPress={onDelete}
+          hitSlop={8}
+          style={({ pressed }) => [styles.deleteChip, { backgroundColor: theme.red }, pressed && styles.pressed]}
+        >
+          <Ionicons name="trash-outline" size={14} color="#FFFFFF" />
+        </Pressable>
+      ) : null}
       {settings.cardHeaderImageMode !== 'hidden' ? (
         <CardHeaderImage
           mode={settings.cardHeaderImageMode}
@@ -251,6 +284,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.line,
     ...shadow.soft,
+  },
+  deleteChip: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    elevation: 3,
   },
   header: {
     width: '100%',
@@ -389,6 +434,11 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 15,
     lineHeight: 23,
+  },
+  compactPreviewImage: {
+    width: '100%',
+    height: 108,
+    borderRadius: radius.md,
   },
   annotationBox: {
     marginTop: 8,
