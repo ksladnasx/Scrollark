@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
+import * as NativeSplashScreen from 'expo-splash-screen';
 import React from 'react';
-import { ActivityIndicator, Animated, BackHandler, Dimensions, Easing, Pressable, StyleSheet, Text, useColorScheme, View, type ImageSourcePropType } from 'react-native';
+import { Animated, BackHandler, Dimensions, Easing, Pressable, StyleSheet, Text, useColorScheme, View, type ImageSourcePropType } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL } from './config/imageUrls';
 import { FavoritesScreen } from './screens/FavoritesScreen';
@@ -20,6 +21,7 @@ import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { HomeShareOverlay } from './components/HomeShareOverlay';
 import { StatsShareOverlay } from './components/StatsShareOverlay';
 import { MarkdownGuideModal } from './components/MarkdownGuideModal';
+import { SplashScreen } from './components/SplashScreen';
 import { TabBar } from './components/TabBar';
 import { getSettings, getStatistics, initializeDatabase, listCardGroupsWithCounts, listCards, listDocuments, listFavoriteCards, listFolders, updateSetting } from './data/repository';
 import type { CardGroupWithCount, CardRecord, DocumentRecord, FolderRecord, KnowledgeListMode, Route, Settings, SettingsSection, Statistics, TabKey } from './domain/types';
@@ -29,6 +31,10 @@ import { resolveAppTheme, ThemeProvider, useAppTheme } from './theme/ThemeContex
 import { palette, radius } from './theme/tokens';
 import { AppAlertHost } from './components/AppAlert';
 import { OverlayHost } from './components/AppOverlay';
+
+void NativeSplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+const SPLASH_MIN_VISIBLE_MS = 1300;
 
 const initialStats: Statistics = { totalCards: 0, gotCards: 0, favoriteCards: 0, annotatedCards: 0, todayGets: 0, todayReviews: 0, goal: 10, streakDays: 0, week: [], documents: 0, dueCount: 0, recentCount: 0, fuzzyCount: 0, clearCount: 0, forgotCount: 0, weakCount: 0, dueWeakCount: 0, tomorrowCount: 0 };
 const initialSettings: Settings = {
@@ -73,6 +79,9 @@ export default function App() {
   const [folders, setFolders] = React.useState<FolderRecord[]>([]);
   const [cardGroups, setCardGroups] = React.useState<CardGroupWithCount[]>([]);
   const [error, setError] = React.useState('');
+  const [showSplash, setShowSplash] = React.useState(true);
+  const [splashExiting, setSplashExiting] = React.useState(false);
+  const splashStartedAt = React.useRef(Date.now());
   // 分享海报挂在 App 主窗口层级渲染：整屏截图只能捕获主窗口，
   // 放进 <Modal>（独立 Dialog 窗口）里的内容截不到。
   const [sharingCard, setSharingCard] = React.useState<CardRecord | null>(null);
@@ -193,14 +202,28 @@ export default function App() {
 
   const loaded = ready && (fontsLoaded || Boolean(fontError));
 
+  const hideNativeSplash = React.useCallback(() => {
+    void NativeSplashScreen.hideAsync().catch(() => undefined);
+  }, []);
+
+  React.useEffect(() => {
+    if (error) hideNativeSplash();
+  }, [error, hideNativeSplash]);
+
+  React.useEffect(() => {
+    if (!loaded || !showSplash) return;
+    hideNativeSplash();
+    const elapsed = Date.now() - splashStartedAt.current;
+    const timer = setTimeout(() => setSplashExiting(true), Math.max(0, SPLASH_MIN_VISIBLE_MS - elapsed));
+    return () => clearTimeout(timer);
+  }, [hideNativeSplash, loaded, showSplash]);
+
   if (!loaded) {
     return (
       <ThemeProvider settings={settings}>
         <SafeAreaProvider>
-          <View style={[styles.center, { backgroundColor: theme.paper }] }>
-            <ActivityIndicator color={theme.ink} />
-            <Text style={[styles.centerText, { color: theme.inkMuted }]}>Scrollark 正在启动…</Text>
-          </View>
+          <StatusBar style={theme.dark ? 'light' : 'dark'} />
+          <SplashScreen mode="enter" onReady={hideNativeSplash} />
         </SafeAreaProvider>
       </ThemeProvider>
     );
@@ -410,6 +433,12 @@ export default function App() {
           </PushOverlay>
           {/* 全局自定义提示弹窗（iOS 风格）：以独立原生 Modal 窗口弹出，盖在所有页面与其他 Modal 之上 */}
           <AppAlertHost fontFamily={settings.fontFamily} />
+          {showSplash ? (
+            <SplashScreen
+              mode={splashExiting ? 'exit' : 'enter'}
+              onDone={() => setShowSplash(false)}
+            />
+          ) : null}
         </View>
       </SafeAreaProvider>
     </ThemeProvider>
