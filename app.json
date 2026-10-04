@@ -2,7 +2,7 @@
   "expo": {
     "name": "Scrollark",
     "slug": "scrollark",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "scheme": "scrollark",
