@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
   // 按钮在条内右对齐排列。
   cornerCluster: {
     position: 'absolute',
-    top: -38,
+    top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
