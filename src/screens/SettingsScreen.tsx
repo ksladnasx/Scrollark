@@ -20,6 +20,7 @@ type Entry = {
 
 const themeLabels = { system: '跟随系统', light: '亮色', dark: '暗色' } as const;
 const cardModeLabels = { local: '本地图库', remote: '远程壁纸', hidden: '不显示' } as const;
+const spacingLabels: Record<number, string> = { [-1]: '紧凑', 0: '标准', 1: '宽松', 2: '加宽' };
 
 // 设置一级页：只展示各分类的入口，具体配置在对应的二级页面里（经 settingsDetail 路由进入）。
 export function SettingsScreen({ settings, onOpenSection }: Props) {
@@ -32,8 +33,8 @@ export function SettingsScreen({ settings, onOpenSection }: Props) {
     {
       key: 'reading',
       icon: 'text-outline',
-      title: '字体设置',
-      summary: () => `${activeFont?.label ?? settings.fontFamily} · 字号 ${settings.fontSize} · ${themeLabels[settings.themeMode]}`,
+      title: '阅读设置',
+      summary: () => `${activeFont?.label ?? settings.fontFamily} · 字号 ${settings.fontSize} · 间距 ${spacingLabels[settings.fontLetterSpacing] ?? '标准'} · ${themeLabels[settings.themeMode]}`,
     },
     {
       key: 'pacing',

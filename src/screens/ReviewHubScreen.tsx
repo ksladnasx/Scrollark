@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
 import { AppButton } from '../components/AppButton';
@@ -186,8 +186,12 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
           <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
             <View style={styles.cardHead}>
               <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily }]}>上次复习</Text>
-              <Text style={[styles.cardHeadMeta, { color: theme.inkMuted, fontFamily }]}>{formatRelativeDayLabel(lastReview.lastAt)}</Text>
+              <Text style={[styles.cardHeadMeta, { color: theme.inkMuted, fontFamily }]}>
+                {formatRelativeDayLabel(lastReview.lastAt)} · 共 {lastReview.total} 张
+              </Text>
             </View>
+            {/* 评级占比条：记得 / 模糊 / 不记得 三段颜色与下方统计一一对应 */}
+            <LastReviewBar clear={lastReview.clear} fuzzy={lastReview.fuzzy} forgot={lastReview.forgot} trackColor={theme.paperSoft} />
             <View style={styles.lastReviewRow}>
               {([
                 { label: '记得', count: lastReview.clear, color: masteryColors[3] },
@@ -195,8 +199,7 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
                 { label: '不记得', count: lastReview.forgot, color: masteryColors[1] },
               ]).map((item) => (
                 <View key={item.label} style={styles.lastReviewStat}>
-                  <View style={[styles.statusDot, { backgroundColor: item.color }]} />
-                  <Text style={[styles.lastReviewValue, { color: theme.ink, fontFamily }]}>{item.count}</Text>
+                  <Text style={[styles.lastReviewValue, { color: item.color, fontFamily }]}>{item.count}</Text>
                   <Text style={[styles.lastReviewLabel, { color: theme.inkMuted, fontFamily }]}>{item.label}</Text>
                 </View>
               ))}
@@ -262,6 +265,40 @@ export function ReviewHubScreen({ stats, settings, onStartReview, onStartAheadRe
         onResetProgress={handleResetProgress}
         onDelete={handleDeleteCard}
       />
+    </View>
+  );
+}
+
+// 上次复习的评级占比条：记得 / 模糊 / 不记得 三段按张数比例展开，
+// 挂载与数据变化时播放一次生长动画（宽度动画不支持原生驱动，走 JS 驱动即可）。
+function LastReviewBar({ clear, fuzzy, forgot, trackColor }: { clear: number; fuzzy: number; forgot: number; trackColor: string }) {
+  const progress = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    progress.setValue(0);
+    Animated.timing(progress, { toValue: 1, duration: 560, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [clear, forgot, fuzzy, progress]);
+
+  const total = clear + fuzzy + forgot;
+  const segments = [
+    { key: 'clear', value: clear, color: masteryColors[3] },
+    { key: 'fuzzy', value: fuzzy, color: masteryColors[2] },
+    { key: 'forgot', value: forgot, color: masteryColors[1] },
+  ];
+
+  return (
+    <View style={[styles.lastReviewBarTrack, { backgroundColor: trackColor }]}>
+      {segments.map((segment) => {
+        if (segment.value <= 0) return null;
+        return (
+          <Animated.View
+            key={segment.key}
+            style={[
+              styles.lastReviewBarSegment,
+              { backgroundColor: segment.color, width: progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${(segment.value / total) * 100}%`] }) },
+            ]}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -412,9 +449,11 @@ const styles = StyleSheet.create({
   upcomingLabel: { fontSize: 10, fontWeight: '700' },
   upcomingEmpty: { fontSize: 12, lineHeight: 19, fontWeight: '600' },
   upcomingLoading: { paddingVertical: 24 },
-  lastReviewRow: { flexDirection: 'row' },
-  lastReviewStat: { flex: 1, alignItems: 'center', gap: 3 },
-  lastReviewValue: { fontSize: 17, fontWeight: '900' },
+  lastReviewBarTrack: { height: 10, borderRadius: 5, flexDirection: 'row', overflow: 'hidden' },
+  lastReviewBarSegment: { height: '100%' },
+  lastReviewRow: { flexDirection: 'row', marginTop: 2 },
+  lastReviewStat: { flex: 1, alignItems: 'center', gap: 2 },
+  lastReviewValue: { fontSize: 17, lineHeight: 21, fontWeight: '900' },
   lastReviewLabel: { fontSize: 11, fontWeight: '700' },
   modalWrap: { flex: 1 },
   modalHeader: { height: 72, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth },

@@ -70,6 +70,8 @@ export type Settings = {
   // 到期复习的单次数量（10/20/50），在复习流程页顶部可改；提前复习固定 30 张。
   reviewBatchSize: number;
   fontSize: number;
+  // 正文字体间距（px）：-1 紧凑 / 0 标准 / 1 宽松 / 2 加宽，作用于阅读正文。
+  fontLetterSpacing: number;
   headerImage: string;
   fontFamily: string;
   cardHeaderImageMode: CardHeaderImageMode;

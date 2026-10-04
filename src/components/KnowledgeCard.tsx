@@ -181,7 +181,7 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           </Text>
         </>
       ) : (
-        <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={textColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} />
+        <MarkdownRenderer markdown={stripDuplicatedLeadingTitle(card.content, title)} color={textColor} fontSize={settings.fontSize} fontFamily={settings.fontFamily} letterSpacing={settings.fontLetterSpacing} />
       )}
     </>
   );

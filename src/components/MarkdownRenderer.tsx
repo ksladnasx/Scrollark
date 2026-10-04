@@ -9,13 +9,14 @@ type InlineProps = {
   color: string;
   fontSize: number;
   fontFamily?: string;
+  letterSpacing?: number;
 };
 
-function Inline({ text, color, fontSize, fontFamily }: InlineProps) {
+function Inline({ text, color, fontSize, fontFamily, letterSpacing = 0 }: InlineProps) {
   const theme = useAppTheme();
   const parts = text.split(/(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/g).filter(Boolean);
   return (
-    <Text selectable style={[styles.paragraphText, { color, fontSize, lineHeight: fontSize * 1.66, fontFamily }]}> 
+    <Text selectable style={[styles.paragraphText, { color, fontSize, lineHeight: fontSize * 1.66, fontFamily, letterSpacing }]}>
       {parts.map((part, index) => {
         if (part.startsWith('**') && part.endsWith('**')) {
           return <Text key={`inline-bold-${index}`} style={styles.bold}>{part.slice(2, -2)}</Text>;
@@ -37,14 +38,16 @@ export function MarkdownRenderer({
   color = palette.ink,
   fontSize = 18,
   fontFamily,
+  letterSpacing = 0,
 }: {
   markdown: string;
   color?: string;
   fontSize?: number;
   fontFamily?: string;
+  letterSpacing?: number;
 }) {
   const blocks = parseMarkdownBlocks(markdown);
-  return <MarkdownBlocks blocks={blocks} color={color} fontSize={fontSize} fontFamily={fontFamily} />;
+  return <MarkdownBlocks blocks={blocks} color={color} fontSize={fontSize} fontFamily={fontFamily} letterSpacing={letterSpacing} />;
 }
 
 // 渲染已解析的块列表：预览等长文档场景可以在外部做分页，只渲染前 N 个块，
@@ -54,11 +57,13 @@ export function MarkdownBlocks({
   color = palette.ink,
   fontSize = 18,
   fontFamily,
+  letterSpacing = 0,
 }: {
   blocks: ReturnType<typeof parseMarkdownBlocks>;
   color?: string;
   fontSize?: number;
   fontFamily?: string;
+  letterSpacing?: number;
 }) {
   const { width } = useWindowDimensions();
   const theme = useAppTheme();
@@ -67,7 +72,7 @@ export function MarkdownBlocks({
       {blocks.map((block, index) => {
         if (block.type === 'heading') {
           const size = block.level <= 2 ? fontSize + 8 : fontSize + 4;
-          return <Text selectable key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily }]}>{block.text}</Text>;
+          return <Text selectable key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily, letterSpacing: letterSpacing - 0.5 }]}>{block.text}</Text>;
         }
         if (block.type === 'code') {
           return (
@@ -93,7 +98,7 @@ export function MarkdownBlocks({
         if (block.type === 'quote') {
           return (
             <View key={`block-quote-${index}`} style={[styles.quote, { borderLeftColor: theme.sage, backgroundColor: theme.dark ? 'rgba(169,181,155,0.14)' : 'rgba(135,146,124,0.12)' }] }>
-              <Inline text={block.text} color={theme.inkMuted} fontSize={Math.max(15, fontSize - 1)} fontFamily={fontFamily} />
+              <Inline text={block.text} color={theme.inkMuted} fontSize={Math.max(15, fontSize - 1)} fontFamily={fontFamily} letterSpacing={letterSpacing} />
             </View>
           );
         }
@@ -103,7 +108,7 @@ export function MarkdownBlocks({
               {block.items.map((item, itemIndex) => (
                 <View key={`list-item-${itemIndex}`} style={styles.listItem}>
                   <View style={[styles.bullet, { backgroundColor: theme.ink }]} />
-                  <View style={styles.listText}><Inline text={item} color={color} fontSize={fontSize} fontFamily={fontFamily} /></View>
+                  <View style={styles.listText}><Inline text={item} color={color} fontSize={fontSize} fontFamily={fontFamily} letterSpacing={letterSpacing} /></View>
                 </View>
               ))}
             </View>
@@ -140,7 +145,7 @@ export function MarkdownBlocks({
             </View>
           );
         }
-        return <Inline key={`block-paragraph-${index}`} text={block.text} color={color} fontSize={fontSize} fontFamily={fontFamily} />;
+        return <Inline key={`block-paragraph-${index}`} text={block.text} color={color} fontSize={fontSize} fontFamily={fontFamily} letterSpacing={letterSpacing} />;
       })}
     </View>
   );

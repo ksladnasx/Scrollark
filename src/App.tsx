@@ -35,6 +35,7 @@ const initialSettings: Settings = {
   sessionCardCount: 10,
   reviewBatchSize: 50,
   fontSize: 18,
+  fontLetterSpacing: 0,
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'remote',

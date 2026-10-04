@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Linking as ReactLinking, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Linking as ReactLinking, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { showAlert } from '../components/AppAlert';
 import { AppButton } from '../components/AppButton';
@@ -43,13 +43,23 @@ export const APP_REPO_URL = 'https://github.com/ksladnasx/Scrollark';
 const APP_ICON = require('../../img/softicon.png');
 
 const SECTION_TITLES: Record<SettingsSection, string> = {
-  reading: '字体设置',
+  reading: '阅读设置',
   wallpaper: '首页壁纸',
   card: '卡片背景',
   pacing: '阅读节奏',
   data: '数据管理',
   about: '基础信息',
 };
+
+// 字体间距档位（与 domain/types 的取值一致）。
+const SPACING_LABELS: Record<number, string> = { [-1]: '紧凑', 0: '标准', 1: '宽松', 2: '加宽' };
+
+// 浮动下拉菜单：紧凑宽度、右对齐挂在触发行下方；最大可视高度防超长列表。
+const DROPDOWN_MENU_WIDTH = 168;
+const DROPDOWN_MAX_HEIGHT = 236;
+
+// 同页多个下拉互斥：记录当前展开项的关闭器，展开新下拉时自动收起上一个。
+let activeDropdownCloser: (() => void) | null = null;
 
 // 设置二级页：只渲染某一个分类的详细配置（入口在设置 Tab 一级页）。
 // 全屏页面，无 Tab 栏，左上角返回。
@@ -59,9 +69,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
   const [homeStatus, setHomeStatus] = React.useState<Status>(null);
   const [cardBusy, setCardBusy] = React.useState(false);
   const [cardStatus, setCardStatus] = React.useState<Status>(null);
-  const [homeSourceOpen, setHomeSourceOpen] = React.useState(false);
-  const [cardSourceOpen, setCardSourceOpen] = React.useState(false);
-  const [fontOpen, setFontOpen] = React.useState(false);
   // 导出与导入各自独立 loading：任一进行中只转对应按钮，互不复用。
   const [exportBusy, setExportBusy] = React.useState(false);
   const [importBusy, setImportBusy] = React.useState(false);
@@ -70,10 +77,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
   const cardRemote = settings.cardHeaderImageMode === 'remote';
   const activeFont = fontOptions.find((font) => font.key === settings.fontFamily);
   const fontFamily = settings.fontFamily;
-
-  const toggleFont = () => { setHomeSourceOpen(false); setCardSourceOpen(false); setFontOpen((value) => !value); };
-  const toggleHomeSource = () => { setFontOpen(false); setCardSourceOpen(false); setHomeSourceOpen((value) => !value); };
-  const toggleCardSource = () => { setFontOpen(false); setHomeSourceOpen(false); setCardSourceOpen((value) => !value); };
 
   const update = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
     await updateSetting(key, value);
@@ -95,7 +98,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
   };
 
   const changeHomeBackgroundSource = async (url: string) => {
-    setHomeSourceOpen(false);
     if (homeBusy || url === settings.homeBackgroundImageUrl) return;
     try {
       setHomeBusy(true);
@@ -114,7 +116,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
   // 切换卡片壁纸源：清空已解析的头图（数据库、内存与本地文件），
   // 卡片在下次展示时按新源重新解析。仅远程壁纸模式下有意义。
   const changeCardBackgroundSource = async (url: string) => {
-    setCardSourceOpen(false);
     if (!cardRemote || cardBusy || url === settings.cardBackgroundImageUrl) return;
     try {
       setCardBusy(true);
@@ -152,7 +153,6 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
 
   const changeCardMode = async (mode: Settings['cardHeaderImageMode']) => {
     setCardStatus(null);
-    if (mode !== 'remote') setCardSourceOpen(false);
     if (mode === settings.cardHeaderImageMode) return;
     await update('cardHeaderImageMode', mode);
     if (mode === 'remote') setCardStatus({ kind: 'ok', text: '已切换为远程壁纸，卡片背景会按下方所选源自动加载。' });
@@ -281,39 +281,32 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
 
       <ScrollView style={styles.body} contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
         {section === 'reading' ? (
-          <Section icon="text-outline" title="阅读偏好" theme={theme} settings={settings}>
+          <>
+            <Section icon="text-outline" title="阅读偏好" theme={theme} settings={settings}>
             <Rows theme={theme}>
               <SelectRow
                 label="阅读字体"
                 valueLabel={activeFont?.label ?? settings.fontFamily}
-                open={fontOpen}
-                onToggle={toggleFont}
+                options={fontOptions.map((font) => ({ key: font.key, label: font.label, fontFamily: font.key }))}
+                selectedKey={settings.fontFamily}
+                onSelect={(key) => { void update('fontFamily', key as Settings['fontFamily']); }}
                 theme={theme}
                 settings={settings}
-              >
-                {fontOptions.map((font) => (
-                  <OptionRow
-                    key={font.key}
-                    label={font.label}
-                    active={font.key === settings.fontFamily}
-                    fontFamily={font.key}
-                    theme={theme}
-                    onPress={() => { setFontOpen(false); void update('fontFamily', font.key); }}
-                  />
-                ))}
-              </SelectRow>
-              <ChipRow
-                label="正文字号"
-                extra={(
-                  <Text style={[styles.fontDemo, { color: theme.ink, fontFamily: settings.fontFamily, fontSize: settings.fontSize + 8 }]}>
-                    Aa
-                  </Text>
-                )}
-                theme={theme}
-                settings={settings}
-              >
+              />
+              <ChipRow label="正文字号" theme={theme} settings={settings}>
                 {[16, 18, 20, 22].map((size) => (
                   <Chip key={`size-${size}`} label={`${size}`} active={settings.fontSize === size} theme={theme} onPress={() => { void update('fontSize', size); }} />
+                ))}
+              </ChipRow>
+              <ChipRow label="字体间距" theme={theme} settings={settings}>
+                {([-1, 0, 1, 2] as const).map((spacing) => (
+                  <Chip
+                    key={`spacing-${spacing}`}
+                    label={SPACING_LABELS[spacing]}
+                    active={settings.fontLetterSpacing === spacing}
+                    theme={theme}
+                    onPress={() => { void update('fontLetterSpacing', spacing); }}
+                  />
                 ))}
               </ChipRow>
               <ChipRow label="显示模式" theme={theme} settings={settings}>
@@ -327,6 +320,27 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
               </ChipRow>
             </Rows>
           </Section>
+          {/* 实时预览：字体 / 字号 / 间距改动即时反映在演示文字上 */}
+          <Section icon="eye-outline" title="实时预览" theme={theme} settings={settings}>
+            <View style={styles.previewWrap}>
+              <Text
+                style={[styles.previewHeading, { color: theme.ink, fontFamily, fontSize: settings.fontSize + 6, letterSpacing: settings.fontLetterSpacing - 0.5 }]}
+              >
+                间隔重复记忆法
+              </Text>
+              <Text
+                style={[styles.previewBody, { color: theme.ink, fontFamily, fontSize: settings.fontSize, lineHeight: settings.fontSize * 1.66, letterSpacing: settings.fontLetterSpacing }]}
+              >
+                遗忘曲线告诉我们：分段复习比一次长时间的背诵更有效。The quick brown fox jumps over the lazy dog, 0123456789.
+              </Text>
+              <Text
+                style={[styles.previewBody, { color: theme.inkMuted, fontFamily, fontSize: Math.max(15, settings.fontSize - 1), lineHeight: settings.fontSize * 1.5, letterSpacing: settings.fontLetterSpacing }]}
+              >
+                批注与摘要会跟随字号与间距实时变化——预览即所得。
+              </Text>
+            </View>
+          </Section>
+          </>
         ) : null}
 
         {section === 'wallpaper' ? (
@@ -338,24 +352,13 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
               <SelectRow
                 label="壁纸源"
                 valueLabel={activeHomeSource?.label ?? settings.homeBackgroundImageUrl}
-                open={homeSourceOpen}
                 disabled={homeBusy}
-                onToggle={toggleHomeSource}
+                options={homeOptions.map((option) => ({ key: option.url, label: option.label, hint: option.url }))}
+                selectedKey={settings.homeBackgroundImageUrl}
+                onSelect={(key) => changeHomeBackgroundSource(key)}
                 theme={theme}
                 settings={settings}
-              >
-                {homeOptions.map((option) => (
-                  <OptionRow
-                    key={option.url}
-                    label={option.label}
-                    subLabel={option.url}
-                    active={option.url === settings.homeBackgroundImageUrl}
-                    fontFamily={fontFamily}
-                    theme={theme}
-                    onPress={() => changeHomeBackgroundSource(option.url)}
-                  />
-                ))}
-              </SelectRow>
+              />
               <View>
                 <View style={styles.selectRowInner}>
                   <Text style={[styles.rowLabel, { color: theme.ink, fontFamily }]}>保存位置</Text>
@@ -395,24 +398,13 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
                   <SelectRow
                     label="卡片壁纸源"
                     valueLabel={activeCardSource?.label ?? settings.cardBackgroundImageUrl}
-                    open={cardSourceOpen}
                     disabled={cardBusy}
-                    onToggle={toggleCardSource}
+                    options={cardOptions.map((option) => ({ key: option.url, label: option.label, hint: option.url }))}
+                    selectedKey={settings.cardBackgroundImageUrl}
+                    onSelect={(key) => changeCardBackgroundSource(key)}
                     theme={theme}
                     settings={settings}
-                  >
-                    {cardOptions.map((option) => (
-                      <OptionRow
-                        key={option.url}
-                        label={option.label}
-                        subLabel={option.url}
-                        active={option.url === settings.cardBackgroundImageUrl}
-                        fontFamily={fontFamily}
-                        theme={theme}
-                        onPress={() => changeCardBackgroundSource(option.url)}
-                      />
-                    ))}
-                  </SelectRow>
+                  />
                   <ChipRow label="头图图池" theme={theme} settings={settings}>
                     {([
                       ['每卡一张', 0],
@@ -572,36 +564,78 @@ function Rows({ theme, children }: { theme: AppTheme; children: React.ReactNode 
   );
 }
 
-// 手风琴式选择行：收起时只显示「标签 + 当前值 + 箭头」，展开后列出全部选项。
-function SelectRow({ label, valueLabel, open, disabled, onToggle, children, theme, settings }: { label: string; valueLabel: string; open: boolean; disabled?: boolean; onToggle?: () => void; children?: React.ReactNode; theme: AppTheme; settings: Settings }) {
+// 选择行：收起时只显示「标签 + 当前值 + 箭头」，点按在行下方弹出紧凑的浮动小菜单
+// （绝对定位锚定在行底部 +8，右对齐，绝不遮挡触发行；展开项互斥，返回键收起）。
+// 菜单是行内绝对定位元素：依赖 Section 卡片不裁剪溢出（card 无 overflow hidden）。
+function SelectRow({ label, valueLabel, options, selectedKey, disabled, onSelect, theme, settings }: {
+  label: string;
+  valueLabel: string;
+  options: { key: string; label: string; hint?: string; fontFamily?: string }[];
+  selectedKey: string;
+  disabled?: boolean;
+  onSelect: (key: string) => void;
+  theme: AppTheme;
+  settings: Settings;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const close = React.useCallback(() => setOpen(false), []);
+
+  // 展开期间：收起其他已展开的下拉（互斥），返回键优先收起当前下拉。
+  React.useEffect(() => {
+    if (!open) return;
+    activeDropdownCloser?.();
+    activeDropdownCloser = close;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      close();
+      return true;
+    });
+    return () => {
+      if (activeDropdownCloser === close) activeDropdownCloser = null;
+      subscription.remove();
+    };
+  }, [open, close]);
+
   return (
-    <View>
+    <View style={open ? styles.dropdownHostOpen : undefined}>
       <Pressable
         accessibilityRole="button"
         disabled={disabled}
-        onPress={onToggle}
+        onPress={() => setOpen((value) => !value)}
         style={({ pressed }) => [styles.selectRowInner, pressed && !disabled && styles.pressed, disabled && { opacity: 0.55 }]}
       >
         <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
         <View style={styles.rowRight}>
           <Text numberOfLines={1} style={[styles.rowValue, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>{valueLabel}</Text>
-          {onToggle ? <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={15} color={theme.inkMuted} /> : null}
+          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={15} color={theme.inkMuted} />
         </View>
       </Pressable>
-      {open && children ? <View style={styles.optionList}>{children}</View> : null}
+      {open ? (
+        <View style={[styles.dropdownCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+          <ScrollView style={{ maxHeight: DROPDOWN_MAX_HEIGHT }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            {options.map((option) => {
+              const selected = option.key === selectedKey;
+              return (
+                <Pressable
+                  key={option.key}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => { close(); onSelect(option.key); }}
+                  style={({ pressed }) => [styles.dropdownOption, pressed && styles.dropdownOptionPressed]}
+                >
+                  <View style={styles.dropdownTexts}>
+                    <Text numberOfLines={1} style={[styles.dropdownLabel, { color: selected ? theme.accent : theme.ink, fontFamily: option.fontFamily ?? settings.fontFamily }]}>
+                      {option.label}
+                    </Text>
+                    {option.hint ? <Text numberOfLines={1} style={[styles.dropdownHint, { color: theme.inkMuted }]}>{option.hint}</Text> : null}
+                  </View>
+                  {selected ? <Ionicons name="checkmark" size={15} color={theme.accent} /> : null}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
     </View>
-  );
-}
-
-function OptionRow({ label, subLabel, active, fontFamily, theme, onPress }: { label: string; subLabel?: string; active: boolean; fontFamily: string; theme: AppTheme; onPress: () => void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.optionRow, pressed && styles.pressed]}>
-      <View style={styles.optionTextWrap}>
-        <Text numberOfLines={1} style={[styles.optionLabel, { color: active ? theme.accent : theme.ink, fontFamily }]}>{label}</Text>
-        {subLabel ? <Text numberOfLines={1} style={[styles.optionSub, { color: theme.inkMuted, fontFamily }]}>{subLabel}</Text> : null}
-      </View>
-      {active ? <Ionicons name="checkmark" size={17} color={theme.accent} /> : null}
-    </Pressable>
   );
 }
 
@@ -670,26 +704,48 @@ const styles = StyleSheet.create({
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionIcon: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   sectionTitle: { fontSize: 15, fontWeight: '900', letterSpacing: 0.3 },
-  card: { borderRadius: radius.xl, borderWidth: 1, overflow: 'hidden' },
+  // 卡片不裁剪溢出：SelectRow 的浮动下拉要伸出卡片边界（内部子项均为透明背景，无圆角溢出问题）。
+  card: { borderRadius: radius.xl, borderWidth: 1 },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 16 },
   rowInner: { paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   chipRowHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   selectRowInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16, paddingVertical: 14 },
-  rowLabel: { fontSize: 14, fontWeight: '700' },
+  // 展开时提升所在行的绘制层级，保证菜单盖住卡片内后续内容。
+  dropdownHostOpen: { zIndex: 40 },
+  // 紧凑浮动菜单：挂在行底 +8，右对齐（当前值所在侧），固定窄宽度。
+  dropdownCard: {
+    position: 'absolute',
+    top: '100%',
+    right: 10,
+    width: DROPDOWN_MENU_WIDTH,
+    marginTop: 8,
+    borderRadius: 13,
+    borderWidth: 1,
+    overflow: 'hidden',
+    zIndex: 41,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  dropdownOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingVertical: 8, paddingHorizontal: 12 },
+  dropdownOptionPressed: { backgroundColor: 'rgba(120,110,90,0.14)' },
+  dropdownTexts: { flex: 1, minWidth: 0, gap: 1 },
+  dropdownLabel: { fontSize: 13.5, lineHeight: 20, fontWeight: '600' },
+  dropdownHint: { fontSize: 10.5, lineHeight: 14, fontWeight: '500' },
+  // 行内文字固定行高：标签与当前值都用当前字体渲染，不同字体默认行高不同，
+  // 不锁行高会导致切换字体时行高跳动。
+  rowLabel: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end', minWidth: 0 },
-  rowValue: { fontSize: 13, fontWeight: '600', flexShrink: 1, maxWidth: '70%', textAlign: 'right' },
-  // 字体演示字符：绝不加 fontWeight —— Android 上自定义字体没有粗体变体时
-  // 会回退到系统字体，导致演示字符看起来"字体没生效"。
-  fontDemo: { letterSpacing: 0.5 },
+  rowValue: { fontSize: 13, lineHeight: 18, fontWeight: '600', flexShrink: 1, maxWidth: '70%', textAlign: 'right' },
+  // 实时预览区：与阅读页同样的排版参数（字号 + 1.66 行高 + 间距）。
+  previewWrap: { paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
+  previewHeading: { fontWeight: '900' },
+  previewBody: { fontWeight: '400' },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { minHeight: 34, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   chipText: { fontSize: 13, fontWeight: '700' },
   swatch: { width: 12, height: 12, borderRadius: 6, borderWidth: 1 },
-  optionList: { paddingBottom: 6 },
-  optionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 11, paddingHorizontal: 16 },
-  optionTextWrap: { flex: 1, minWidth: 0, gap: 2 },
-  optionLabel: { fontSize: 14, fontWeight: '700' },
-  optionSub: { fontSize: 11, fontWeight: '600' },
   actionRow: { padding: 12 },
   miniButton: { minHeight: 30, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   miniButtonText: { fontSize: 12, fontWeight: '800' },

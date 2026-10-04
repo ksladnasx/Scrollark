@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS: Settings = {
   sessionCardCount: 10,
   reviewBatchSize: 50,
   fontSize: 18,
+  fontLetterSpacing: 0,
   headerImage: 'warm0',
   fontFamily: 'LXGWWenKai',
   cardHeaderImageMode: 'remote',
@@ -183,6 +184,10 @@ export async function getSettings(): Promise<Settings> {
       next.reviewBatchSize = row.value.trim() !== '' && [10, 20, 50].includes(parsed) ? parsed : DEFAULT_SETTINGS.reviewBatchSize;
     }
     if (row.key === 'fontSize') next.fontSize = Number(row.value) || DEFAULT_SETTINGS.fontSize;
+    if (row.key === 'fontLetterSpacing') {
+      const parsed = Number(row.value);
+      next.fontLetterSpacing = row.value.trim() !== '' && [-1, 0, 1, 2].includes(parsed) ? parsed : DEFAULT_SETTINGS.fontLetterSpacing;
+    }
     if (row.key === 'headerImage') next.headerImage = row.value || DEFAULT_SETTINGS.headerImage;
     if (row.key === 'fontFamily') {
       // 字体键必须是当前注册的字体之一：老安装里可能存有已被移除的字体键。

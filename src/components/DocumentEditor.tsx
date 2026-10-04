@@ -291,7 +291,7 @@ function DocumentContentEditor({
       ) : (
         <ScrollView style={[styles.fullPreview, { backgroundColor: theme.paperElevated, borderColor: theme.line }]} contentContainerStyle={styles.fullPreviewInner} showsVerticalScrollIndicator={false}>
           {draft.trim() ? (
-            <MarkdownRenderer markdown={draft} color={theme.ink} fontSize={settings.fontSize} fontFamily={fontFamily} />
+            <MarkdownRenderer markdown={draft} color={theme.ink} fontSize={settings.fontSize} fontFamily={fontFamily} letterSpacing={settings.fontLetterSpacing} />
           ) : (
             <Text style={[styles.previewEmpty, { color: theme.inkMuted, fontFamily }]}>暂无内容</Text>
           )}
