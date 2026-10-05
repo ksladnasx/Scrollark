@@ -3,6 +3,7 @@ import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from '
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 import { parseMarkdownBlocks } from '../utils/markdown';
+import { boldTextStyles } from '../utils/typography';
 
 type InlineProps = {
   text: string;
@@ -19,13 +20,13 @@ function Inline({ text, color, fontSize, fontFamily, letterSpacing = 0 }: Inline
     <Text selectable style={[styles.paragraphText, { color, fontSize, lineHeight: fontSize * 1.66, fontFamily, letterSpacing }]}>
       {parts.map((part, index) => {
         if (part.startsWith('**') && part.endsWith('**')) {
-          return <Text key={`inline-bold-${index}`} style={styles.bold}>{part.slice(2, -2)}</Text>;
+          return <Text key={`inline-bold-${index}`} style={[styles.bold, boldTextStyles(fontFamily, color)]}>{part.slice(2, -2)}</Text>;
         }
         if (part.startsWith('==') && part.endsWith('==')) {
           return <Text key={`inline-mark-${index}`} style={[styles.mark, { color: theme.dark ? theme.paper : palette.ink }]}>{part.slice(2, -2)}</Text>;
         }
         if (part.startsWith('`') && part.endsWith('`')) {
-          return <Text key={`inline-code-${index}`} style={[styles.inlineCode, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.12)' : 'rgba(17,17,15,0.08)' }]}>{part.slice(1, -1)}</Text>;
+          return <Text key={`inline-code-${index}`} style={[styles.inlineCode, { backgroundColor: theme.dark ? 'rgba(255,255,255,0.12)' : 'rgba(17,17,15,0.08)', fontFamily }]}>{part.slice(1, -1)}</Text>;
         }
         return <Text key={`inline-text-${index}`}>{part}</Text>;
       })}
@@ -72,13 +73,13 @@ export function MarkdownBlocks({
       {blocks.map((block, index) => {
         if (block.type === 'heading') {
           const size = block.level <= 2 ? fontSize + 8 : fontSize + 4;
-          return <Text selectable key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily, letterSpacing: letterSpacing - 0.5 }]}>{block.text}</Text>;
+          return <Text selectable key={`block-heading-${index}`} style={[styles.heading, { color, fontSize: size, lineHeight: size * 1.28, fontFamily, letterSpacing: letterSpacing - 0.5 }, boldTextStyles(fontFamily, color)]}>{block.text}</Text>;
         }
         if (block.type === 'code') {
           return (
             <View key={`block-code-${index}`} style={[styles.codeBox, { borderColor: theme.dark ? theme.line : 'rgba(255,255,255,0.08)' }] }>
-              {block.language ? <Text style={styles.codeLang}>{block.language}</Text> : null}
-              <Text selectable style={styles.codeText}>{block.code}</Text>
+              {block.language ? <Text style={[styles.codeLang, { fontFamily }]}>{block.language}</Text> : null}
+              <Text selectable style={[styles.codeText, { fontFamily }]}>{block.code}</Text>
             </View>
           );
         }
@@ -91,7 +92,7 @@ export function MarkdownBlocks({
                 resizeMode="cover"
                 accessibilityLabel={block.alt || '卡片配图'}
               />
-              {block.alt ? <Text style={[styles.imageCaption, { color: theme.inkMuted }]}>{block.alt}</Text> : null}
+              {block.alt ? <Text style={[styles.imageCaption, { color: theme.inkMuted, fontFamily }]}>{block.alt}</Text> : null}
             </View>
           );
         }
@@ -133,7 +134,7 @@ export function MarkdownBlocks({
                           const isLastCell = cellIndex === columnCount - 1;
                           return (
                             <View key={`cell-${rowIndex}-${cellIndex}`} style={[styles.tableCell, { width: columnWidth, backgroundColor: theme.card }, isHeader && [styles.tableHeaderCell, { backgroundColor: theme.tableHeader }], !isLastCell && [styles.tableCellDivider, { borderRightColor: theme.line }], !isHeader && rowIndex % 2 === 0 && [styles.tableCellAlt, { backgroundColor: theme.tableAlt }]]}>
-                              <Text selectable style={[isHeader ? styles.tableHeaderText : styles.tableCellText, { color: theme.ink, fontFamily }]}>{row[cellIndex] ?? ''}</Text>
+                              <Text selectable style={[isHeader ? [styles.tableHeaderText, boldTextStyles(fontFamily, theme.ink)] : styles.tableCellText, { color: theme.ink, fontFamily }]}>{row[cellIndex] ?? ''}</Text>
                             </View>
                           );
                         })}

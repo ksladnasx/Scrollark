@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { showAlert } from '../components/AppAlert';
 import { AppButton } from '../components/AppButton';
 import { clearResolvedCardImages, pruneUnreferencedCardImages } from '../components/CardHeaderImage';
+import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URLS, imageSourceLabel } from '../config/imageUrls';
 import {
   clearCardHeaderImageUrls,
@@ -38,6 +39,23 @@ type Status = { kind: 'ok' | 'error' | 'busy'; text: string } | null;
 
 export const APP_VERSION = Constants.expoConfig?.version ?? '0.3.0';
 export const APP_REPO_URL = 'https://github.com/ksladnasx/Scrollark';
+
+// 阅读偏好实时预览的演示文段：刻意覆盖标题、加粗、行内代码、高亮、代码块与引用，
+// 让用户切换字体时能直接看到各类特殊格式的字体生效效果（与阅读页同一渲染路径）。
+const FONT_PREVIEW_MARKDOWN = [
+  '## 间隔重复记忆法',
+  '',
+  '**遗忘曲线**告诉我们：分段复习比一次长时间的背诵更有效。The quick brown fox jumps over the lazy dog, 0123456789。',
+  '',
+  '==预览即所得==：切换字体后，**加粗**、`行内代码` 与代码块都会实时跟随当前字体。',
+  '',
+  '```js',
+  '// 代码块同样使用所选字体渲染',
+  'const nextReview = card.reviewedAt + interval * card.ease;',
+  '```',
+  '',
+  '> 批注与摘要会跟随字号与间距实时变化。',
+].join('\n');
 
 // 应用图标（与 app.json 的 icon / adaptiveIcon 同源），基础信息页直接展示。
 const APP_ICON = require('../../img/softicon.png');
@@ -320,24 +338,16 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
               </ChipRow>
             </Rows>
           </Section>
-          {/* 实时预览：字体 / 字号 / 间距改动即时反映在演示文字上 */}
+          {/* 实时预览：与阅读页同一 MarkdownRenderer，字体 / 字号 / 间距改动即时反映在演示文段上 */}
           <Section icon="eye-outline" title="实时预览" theme={theme} settings={settings}>
             <View style={styles.previewWrap}>
-              <Text
-                style={[styles.previewHeading, { color: theme.ink, fontFamily, fontSize: settings.fontSize + 6, letterSpacing: settings.fontLetterSpacing - 0.5 }]}
-              >
-                间隔重复记忆法
-              </Text>
-              <Text
-                style={[styles.previewBody, { color: theme.ink, fontFamily, fontSize: settings.fontSize, lineHeight: settings.fontSize * 1.66, letterSpacing: settings.fontLetterSpacing }]}
-              >
-                遗忘曲线告诉我们：分段复习比一次长时间的背诵更有效。The quick brown fox jumps over the lazy dog, 0123456789.
-              </Text>
-              <Text
-                style={[styles.previewBody, { color: theme.inkMuted, fontFamily, fontSize: Math.max(15, settings.fontSize - 1), lineHeight: settings.fontSize * 1.5, letterSpacing: settings.fontLetterSpacing }]}
-              >
-                批注与摘要会跟随字号与间距实时变化——预览即所得。
-              </Text>
+              <MarkdownRenderer
+                markdown={FONT_PREVIEW_MARKDOWN}
+                color={theme.ink}
+                fontSize={settings.fontSize}
+                fontFamily={fontFamily}
+                letterSpacing={settings.fontLetterSpacing}
+              />
             </View>
           </Section>
           </>
@@ -735,10 +745,8 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'flex-end', minWidth: 0 },
   rowValue: { fontSize: 13, lineHeight: 18, fontWeight: '600', flexShrink: 1, maxWidth: '70%', textAlign: 'right' },
-  // 实时预览区：与阅读页同样的排版参数（字号 + 1.66 行高 + 间距）。
-  previewWrap: { paddingHorizontal: 16, paddingVertical: 16, gap: 10 },
-  previewHeading: { fontWeight: '900' },
-  previewBody: { fontWeight: '400' },
+  // 实时预览区：排版参数与阅读页一致（字号 + 1.66 行高 + 间距）。
+  previewWrap: { paddingHorizontal: 16, paddingVertical: 16 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: { minHeight: 34, paddingHorizontal: 13, borderRadius: 10, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   chipText: { fontSize: 13, fontWeight: '700' },

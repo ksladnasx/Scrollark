@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
 import { MarkdownBlocks } from './MarkdownRenderer';
 import { parseMarkdownBlocks } from '../utils/markdown';
+import { boldTextStyles } from '../utils/typography';
 import { softIcon } from '../theme/assets';
 import type { CardRecord, Settings } from '../domain/types';
 import { palette, radius } from '../theme/tokens';
@@ -53,8 +54,8 @@ export function SharePoster({ card, settings, width, imageSource, maxBlocks = 30
       </View>
 
       <View style={styles.body}>
-        <Text style={[styles.title, { fontFamily: settings.fontFamily }]}>{card.title}</Text>
-        {meta ? <Text numberOfLines={1} style={[styles.meta, { fontFamily: settings.fontFamily }]}>{meta}</Text> : null}
+        <Text style={[styles.title, { fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, '#171611')]}>{card.title}</Text>
+        {meta ? <Text numberOfLines={1} style={[styles.meta, { fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, '#6E6A5E')]}>{meta}</Text> : null}
         <View style={styles.divider} />
 
         <View style={styles.content}>

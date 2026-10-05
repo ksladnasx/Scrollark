@@ -3,6 +3,7 @@ import React from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
 import { extractPreviewImage } from '../utils/markdown';
+import { boldTextStyles, CUSTOM_FONT_BOLD_WEIGHT } from '../utils/typography';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius, shadow } from '../theme/tokens';
 import { AppButton } from './AppButton';
@@ -133,7 +134,7 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           <Text
             selectable
             onLayout={compact ? undefined : handleTitleLayout}
-            style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }]}
+            style={[styles.title, compact && styles.compactTitle, { color: textColor, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, textColor)]}
             numberOfLines={compact ? 2 : undefined}
             ellipsizeMode="tail"
           >
@@ -158,7 +159,7 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
       ) : onEditAnnotation && !compact ? (
         <Pressable accessibilityRole="button" onPress={onEditAnnotation} style={({ pressed }) => [styles.annotationBox, styles.annotationAddBox, { backgroundColor: theme.paperSoft }, pressed && styles.pressed]}>
           <Ionicons name="chatbubble-outline" size={16} color={theme.inkMuted} />
-          <Text style={[styles.annotationAddText, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>添加批注</Text>
+          <Text style={[styles.annotationAddText, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]}>添加批注</Text>
         </Pressable>
       ) : null}
       {compact ? (
@@ -213,8 +214,8 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           <View style={styles.headerScrim} />
           {shouldShowTitleInHeader ? (
             <View style={styles.imageHeaderTitleWrap}>
-              <Text selectable style={[styles.imageHeaderTitle, { fontFamily: settings.fontFamily }]} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
-              {meta ? <Text selectable style={[styles.imageHeaderSource, { fontFamily: settings.fontFamily }]} numberOfLines={1} ellipsizeMode="tail">{meta}</Text> : null}
+              <Text selectable style={[styles.imageHeaderTitle, { fontFamily: settings.fontFamily, fontWeight: CUSTOM_FONT_BOLD_WEIGHT }]} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
+              {meta ? <Text selectable style={[styles.imageHeaderSource, { fontFamily: settings.fontFamily, fontWeight: CUSTOM_FONT_BOLD_WEIGHT }]} numberOfLines={1} ellipsizeMode="tail">{meta}</Text> : null}
             </View>
           ) : null}
           {onClose ? (
@@ -232,11 +233,11 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
           ) : null}
           {(showHeaderTitle || shouldShowTitleInHeader) && !compact ? (
             <View style={styles.textHeaderContent}>
-              <Text selectable style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }]} numberOfLines={1}>{title}</Text>
-              {meta ? <Text selectable style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>{meta}</Text> : null}
+              <Text selectable style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]} numberOfLines={1}>{title}</Text>
+              {meta ? <Text selectable style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>{meta}</Text> : null}
             </View>
           ) : (
-            <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
+            <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
           )}
         </View>
       )}
@@ -244,7 +245,7 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
       {recall?.hidden ? (
         <View style={[styles.recallVeil, { backgroundColor: theme.card }]}>
           <Ionicons name="eye-off-outline" size={30} color={theme.inkMuted} />
-          <Text style={[styles.recallTitle, { color: theme.ink, fontFamily: settings.fontFamily }]}>先主动回忆</Text>
+          <Text style={[styles.recallTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]}>先主动回忆</Text>
           <Text style={[styles.recallBody, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>看着标题，在脑海里过一遍这张卡片的内容，再对照答案检查自己记住了多少。</Text>
           <AppButton label="显示答案" icon="eye-outline" onPress={recall.onReveal} style={styles.recallButton} />
         </View>
