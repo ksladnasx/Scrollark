@@ -59,7 +59,6 @@ const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof ty
   home: { title: '首页', subtitle: 'Scrollark', icon: 'home-outline' },
   review: { title: '复习', subtitle: 'Spaced Review', icon: 'repeat-outline' },
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
-  favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
   stats: { title: '我的', subtitle: 'My Learning', icon: 'share-social-outline' },
   settings: { title: '设置', subtitle: 'Setting', icon: 'search-outline' },
 };
@@ -322,9 +321,6 @@ export default function App() {
   }
 
   const activeTab = route.tab;
-  // 设置二级页：以推入浮层叠加在 Tab 层之上，Tab 树全程保持挂载（跳转/返回均为滑动转场，
-  // 不再有整树卸载重建导致的闪屏）。
-  const detailActive = route.name === 'settingsDetail';
   // 渲染期补录当前 Tab（带守卫，只触发一次重渲染），随后所有已访问 Tab 保持挂载。
   if (!visitedTabs.has(activeTab)) {
     setVisitedTabs((prev) => new Set(prev).add(activeTab));
@@ -334,7 +330,6 @@ export default function App() {
     settings,
     documents,
     cards,
-    favorites,
     folders,
     cardGroups,
     navigate,
@@ -346,7 +341,7 @@ export default function App() {
     onUpdateGoal: (goal: number) => { void updateDailyGoal(goal); },
     onChangeListMode: (mode: KnowledgeListMode) => { void updateKnowledgeListMode(mode); },
   };
-  const nonHomeTabs: TabKey[] = ['review', 'knowledge', 'favorites', 'stats', 'settings'];
+  const nonHomeTabs: TabKey[] = ['review', 'knowledge', 'stats', 'settings'];
   return (
     <ThemeProvider settings={settings}>
       <SafeAreaProvider>
@@ -434,8 +429,8 @@ export default function App() {
               }}
             />
           ) : null}
-          {/* 设置二级页推入浮层：盖住 Tab 栏与页面内容 */}
-          <PushOverlay active={detailActive}>
+          {/* 设置 / 收藏与批注二级页推入浮层：盖住 Tab 栏与页面内容 */}
+          <PushOverlay active={route.name === 'settingsDetail'}>
             <SettingsDetailScreen
               section={lastDetailSection.current}
               settings={settings}
@@ -443,6 +438,15 @@ export default function App() {
               onReset={() => { void refresh(); goHome(); }}
               onCardImagesReset={() => { void refresh(); }}
               onDataChanged={() => { void refresh(); }}
+              onBack={goBack}
+            />
+          </PushOverlay>
+          <PushOverlay active={route.name === 'favorites'}>
+            <FavoritesScreen
+              cards={favorites}
+              settings={settings}
+              onChanged={() => { void refresh(); }}
+              onShare={setSharingCard}
               onBack={goBack}
             />
           </PushOverlay>
@@ -515,9 +519,8 @@ const pageIconLabels: Partial<Record<TabKey, string>> = {
 function PageHeader({ tab, onIconPress }: { tab: TabKey; onIconPress?: () => void }) {
   const meta = pageMeta[tab];
   const theme = useAppTheme();
-  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明，我的 = 分享档案，设置 = 搜索设置）。
-  // 设置页头不放「设置」图标（与页面内容重复），固定换成搜索入口。
-  const iconLabel = pageIconLabels[tab] ?? meta.title;
+  // 右上角仅在有动作时渲染按钮（复习 = 提前复习，知识库 = 格式说明，我的 = 分享档案，设置 = 搜索设置）；
+  // 收藏页右上角不放图标，标题占满整行。
   return (
     <View style={[styles.headerBar, { backgroundColor: theme.paper }] }>
       <View style={styles.headerTitleWrap}>
@@ -527,17 +530,13 @@ function PageHeader({ tab, onIconPress }: { tab: TabKey; onIconPress?: () => voi
       {onIconPress ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={iconLabel}
+          accessibilityLabel={pageIconLabels[tab] ?? meta.title}
           onPress={onIconPress}
           style={({ pressed }) => [styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
         >
           <Ionicons name={meta.icon} size={23} color={theme.ink} />
         </Pressable>
-      ) : (
-        <View style={[styles.headerIcon, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
-          <Ionicons name={meta.icon} size={23} color={theme.ink} />
-        </View>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -549,7 +548,6 @@ function renderPage(
     settings: Settings;
     documents: DocumentRecord[];
     cards: CardRecord[];
-    favorites: CardRecord[];
     folders: FolderRecord[];
     cardGroups: CardGroupWithCount[];
     navigate: (next: Route) => void;
@@ -589,10 +587,8 @@ function renderPage(
           onChangeListMode={data.onChangeListMode}
         />
       );
-    case 'favorites':
-      return <FavoritesScreen cards={data.favorites} settings={data.settings} onChanged={() => void data.refresh()} onShare={data.onShare} />;
     case 'stats':
-      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'tabs', tab: 'favorites' })} onShareStats={data.onShareStats} onUpdateGoal={data.onUpdateGoal} />;
+      return <StatisticsScreen stats={data.stats} onOpenFavorites={() => data.navigate({ name: 'favorites', tab })} onShareStats={data.onShareStats} onUpdateGoal={data.onUpdateGoal} />;
     case 'settings':
       return (
         <SettingsScreen

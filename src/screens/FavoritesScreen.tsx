@@ -1,5 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
 import { CardDetailModal } from '../components/CardDetailModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
@@ -7,14 +9,14 @@ import type { CardRecord, Settings } from '../domain/types';
 import { deleteCard, resetCardReviewProgress } from '../data/repository';
 import { setOverlaySlot } from '../components/AppOverlay';
 import { useAppTheme } from '../theme/ThemeContext';
-import { palette } from '../theme/tokens';
 import { Empty } from './KnowledgeScreen';
 
-type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void; onShare?: (card: CardRecord) => void };
+type Props = { cards: CardRecord[]; settings: Settings; onChanged?: () => void; onShare?: (card: CardRecord) => void; onBack: () => void };
 
 const CARD_ITEM_HEIGHT = 360;
 
-export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) {
+// 收藏与批注二级页：从「我的」页推入（无 Tab 栏），左上角返回，标题居中。
+export function FavoritesScreen({ cards, settings, onChanged, onShare, onBack }: Props) {
   const theme = useAppTheme();
   const fontFamily = settings.fontFamily;
   const [selectedCardId, setSelectedCardId] = React.useState<number | null>(null);
@@ -68,7 +70,19 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.paper }}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: theme.paper }]} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="返回我的"
+          onPress={onBack}
+          style={({ pressed }) => [styles.backButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
+        >
+          <Ionicons name="chevron-back" size={23} color={theme.ink} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: theme.ink, fontFamily }]}>收藏与批注</Text>
+        <View style={styles.headerSide} />
+      </View>
       <FlatList
         contentContainerStyle={styles.wrap}
         showsVerticalScrollIndicator={false}
@@ -76,13 +90,6 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
         keyExtractor={(card, index) => `favorite-card-${card.id}-${card.documentId}-${card.sortOrder}-${index}`}
         renderItem={renderItem}
         getItemLayout={(_, index) => ({ length: CARD_ITEM_HEIGHT, offset: CARD_ITEM_HEIGHT * index, index })}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <Text style={[styles.eyebrow, { color: theme.inkMuted }]}>Saved</Text>
-            <Text style={[styles.title, { color: theme.ink, fontFamily }]}>收藏</Text>
-            <Text style={[styles.subtitle, { color: theme.inkMuted, fontFamily }]}>所有收藏状态都会落到本地数据库，重启应用后仍然保留。</Text>
-          </View>
-        }
         ListEmptyComponent={<Empty title="还没有收藏" body="在刷卡时点击收藏按钮，重要内容会出现在这里。" />}
       />
       <CardDetailModal
@@ -94,16 +101,17 @@ export function FavoritesScreen({ cards, settings, onChanged, onShare }: Props) 
         onResetProgress={handleResetProgress}
         onDelete={handleDeleteCard}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: 18, paddingBottom: 140, gap: 14 },
-  header: { gap: 7 },
-  eyebrow: { color: palette.inkMuted, textTransform: 'uppercase', fontWeight: '900', letterSpacing: 1.2, fontSize: 12 },
-  title: { color: palette.ink, fontSize: 38, fontWeight: '900', letterSpacing: -1.2 },
-  subtitle: { color: palette.inkMuted, fontSize: 15, lineHeight: 23 },
+  screen: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  backButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '900' },
+  headerSide: { width: 44 },
+  wrap: { padding: 18, paddingBottom: 40, gap: 14 },
   cardWrap: { height: 360, maxHeight: 360, marginBottom: 10 },
   pressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
 });

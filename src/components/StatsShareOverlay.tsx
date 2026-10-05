@@ -334,6 +334,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // 与卡片分享浮层一致：elevation 高于二级页推入浮层（24），保证盖在所有页面上。
+    elevation: 40,
     // 预览垂直居中（海报含趋势图与热力图，比首页海报高）：底部预留操作栏高度，
     // 在可用的居中区间内居中，避免小屏上与操作栏重叠。
     justifyContent: 'center',

@@ -19,6 +19,9 @@ export function routeEquals(a: Route, b: Route): boolean {
     case 'settingsDetail':
       // tab 记录推入来源（二级页叠加在 Tab 层之上展示），需一并比较。
       return b.name === 'settingsDetail' && a.section === b.section && a.tab === b.tab;
+    case 'favorites':
+      // 收藏与批注二级页：tab 记录推入来源，需一并比较。
+      return b.name === 'favorites' && a.tab === b.tab;
     default:
       return false;
   }

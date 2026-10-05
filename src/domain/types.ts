@@ -1,11 +1,11 @@
-export type TabKey = 'home' | 'review' | 'stats' | 'knowledge' | 'favorites' | 'settings';
+export type TabKey = 'home' | 'review' | 'stats' | 'knowledge' | 'settings';
 export type CardHeaderImageMode = 'local' | 'remote' | 'hidden';
 export type ThemeMode = 'system' | 'light' | 'dark';
 // 知识库列表展示方式：按文件夹浏览（默认），或平铺显示全部文档。
 export type KnowledgeListMode = 'folders' | 'documents';
 // 设置页二级分类：一级页只显示入口，点入后进入对应详情页。
 export type SettingsSection = 'reading' | 'wallpaper' | 'card' | 'pacing' | 'data' | 'about';
-export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session'; startCardId?: number } | { name: 'review'; mode?: 'due' | 'ahead' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' } | { name: 'settingsDetail'; section: SettingsSection; tab: TabKey };
+export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session'; startCardId?: number } | { name: 'review'; mode?: 'due' | 'ahead' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' } | { name: 'settingsDetail'; section: SettingsSection; tab: TabKey } | { name: 'favorites'; tab: TabKey };
 
 // get 时的自评等级：1 = 忘了，2 = 模糊，3 = 秒懂。评级驱动复习间隔进退。
 export type MasteryRating = 1 | 2 | 3;

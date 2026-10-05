@@ -108,7 +108,8 @@ export function AnnotationEditor({ card, settings, onClose, onSaved }: Props) {
 }
 
 const styles = StyleSheet.create({
-  editorLayer: { ...StyleSheet.absoluteFillObject },
+  // elevation 高于二级页推入浮层（24）：从收藏与批注等推入式二级页打开时仍要盖在其上。
+  editorLayer: { ...StyleSheet.absoluteFillObject, elevation: 40 },
   editorBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(17,17,15,0.55)' },
   editorSheet: {
     position: 'absolute',

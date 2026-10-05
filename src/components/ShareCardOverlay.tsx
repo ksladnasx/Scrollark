@@ -269,6 +269,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // elevation 高于二级页推入浮层（24）：从收藏与批注等二级页分享卡片时仍要盖在其上。
+    elevation: 40,
     backgroundColor: '#FFF9EE',
     zIndex: 100,
   },

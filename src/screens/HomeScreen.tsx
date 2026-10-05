@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import React from 'react';
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, type ImageSourcePropType } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { showAlert } from '../components/AppAlert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { CardRecord, Settings, Statistics, TabKey } from '../domain/types';
@@ -168,7 +169,7 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
                 onPress={() => onShareHome(homeImage)}
                 style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
               >
-                <Ionicons name="share-social-outline" size={18} color="#FFFFFF" />
+                <ShareGlyph size={18} />
               </Pressable>
             </View>
           </View>
@@ -313,6 +314,26 @@ function ProgressNum({ value, label, theme }: { value: string; label: string; th
       <Text style={[styles.progressValue, { color: theme.ink }]}>{value}</Text>
       <Text style={[styles.progressLabel, { color: theme.inkMuted }]}>{label}</Text>
     </View>
+  );
+}
+
+// 首页分享按钮的矢量图标（导出-分享样式）：白色固定，与旧 Ionicons 一致浮在壁纸上。
+function ShareGlyph({ size }: { size: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 1024 1024">
+      <Path
+        d="M814.50688 1024H209.493547A210.133333 210.133333 0 0 1 0.000213 813.653333V295.68A210.133333 210.133333 0 0 1 209.493547 85.333333H298.66688a42.666667 42.666667 0 0 1 0 85.333334H209.493547A124.8 124.8 0 0 0 85.333547 295.68v517.973333A124.8 124.8 0 0 0 209.493547 938.666667h605.013333A124.8 124.8 0 0 0 938.66688 813.653333V469.333333a42.666667 42.666667 0 0 1 85.333333 0v344.32A210.133333 210.133333 0 0 1 814.50688 1024z"
+        fill="#FFFFFF"
+      />
+      <Path
+        d="M384.000213 768a42.666667 42.666667 0 0 1-42.666666-42.666667V384A213.333333 213.333333 0 0 1 554.66688 170.666667h426.666667a42.666667 42.666667 0 0 1 0 85.333333H554.66688a128 128 0 0 0-128 128v341.333333a42.666667 42.666667 0 0 1-42.666667 42.666667z"
+        fill="#FFFFFF"
+      />
+      <Path
+        d="M981.333547 256a42.666667 42.666667 0 0 1-30.08-12.586667l-170.666667-170.666666a42.666667 42.666667 0 0 1 0-60.16 42.666667 42.666667 0 0 1 60.16 0l170.666667 170.666666A42.666667 42.666667 0 0 1 981.333547 256z"
+        fill="#FFFFFF"
+      />
+    </Svg>
   );
 }
 

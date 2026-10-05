@@ -182,6 +182,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // 与卡片分享浮层一致：elevation 高于二级页推入浮层（24），保证盖在所有页面上。
+    elevation: 40,
     // 海报预览垂直居中：整屏遮罩下海报贴顶会显得偏上，居中更接近最终成图的观感。
     justifyContent: 'center',
     backgroundColor: 'rgba(17,17,15,0.6)',
