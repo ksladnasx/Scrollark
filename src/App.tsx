@@ -16,6 +16,7 @@ import { SearchScreen } from './screens/SearchScreen';
 import { SessionScreen } from './screens/SessionScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SettingsDetailScreen } from './screens/SettingsDetailScreen';
+import { SettingsSearchOverlay } from './components/SettingsSearchOverlay';
 import { StatisticsScreen } from './screens/StatisticsScreen';
 import { ShareCardOverlay } from './components/ShareCardOverlay';
 import { HomeShareOverlay } from './components/HomeShareOverlay';
@@ -60,7 +61,7 @@ const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof ty
   knowledge: { title: '知识库', subtitle: 'Markdown importing', icon: 'book-outline' },
   favorites: { title: '收藏与批注', subtitle: '我的卡片', icon: 'bookmark-outline' },
   stats: { title: '我的', subtitle: 'My Learning', icon: 'share-social-outline' },
-  settings: { title: '设置', subtitle: 'Setting', icon: 'settings-outline' },
+  settings: { title: '设置', subtitle: 'Setting', icon: 'search-outline' },
 };
 
 export default function App() {
@@ -91,6 +92,8 @@ export default function App() {
   const [sharingStats, setSharingStats] = React.useState(false);
   // 知识库页头按钮：Markdown 导入格式说明。
   const [mdGuideOpen, setMdGuideOpen] = React.useState(false);
+  // 设置页头按钮：设置项搜索浮层。
+  const [settingsSearchOpen, setSettingsSearchOpen] = React.useState(false);
   const theme = resolveAppTheme(settings.themeMode, systemScheme);
   // Tab 保活：记录访问过的 Tab，首次访问才挂载，之后用 display 切换保留滚动位置与已加载数据。
   const [visitedTabs, setVisitedTabs] = React.useState<ReadonlySet<TabKey>>(() => new Set<TabKey>(['home']));
@@ -376,7 +379,9 @@ export default function App() {
                             ? () => setMdGuideOpen(true)
                             : tab === 'stats'
                               ? () => setSharingStats(true)
-                              : undefined
+                              : tab === 'settings'
+                                ? () => setSettingsSearchOpen(true)
+                                : undefined
                       }
                     />
                     <View style={styles.pageBody}>
@@ -417,6 +422,16 @@ export default function App() {
             <MarkdownGuideModal
               settings={settings}
               onClose={() => setMdGuideOpen(false)}
+            />
+          ) : null}
+          {settingsSearchOpen ? (
+            <SettingsSearchOverlay
+              settings={settings}
+              onClose={() => setSettingsSearchOpen(false)}
+              onOpenSection={(section) => {
+                setSettingsSearchOpen(false);
+                navigate({ name: 'settingsDetail', section, tab: activeTab });
+              }}
             />
           ) : null}
           {/* 设置二级页推入浮层：盖住 Tab 栏与页面内容 */}
@@ -494,12 +509,14 @@ const pageIconLabels: Partial<Record<TabKey, string>> = {
   review: '提前复习',
   knowledge: 'Markdown 格式说明',
   stats: '分享学习档案',
+  settings: '搜索设置',
 };
 
 function PageHeader({ tab, onIconPress }: { tab: TabKey; onIconPress?: () => void }) {
   const meta = pageMeta[tab];
   const theme = useAppTheme();
-  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明，我的 = 分享档案）。
+  // 右侧图标默认仅作装饰；提供 onIconPress 时变成可点按钮（复习 = 提前复习，知识库 = 格式说明，我的 = 分享档案，设置 = 搜索设置）。
+  // 设置页头不放「设置」图标（与页面内容重复），固定换成搜索入口。
   const iconLabel = pageIconLabels[tab] ?? meta.title;
   return (
     <View style={[styles.headerBar, { backgroundColor: theme.paper }] }>

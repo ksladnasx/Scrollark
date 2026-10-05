@@ -182,6 +182,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // 海报预览垂直居中：整屏遮罩下海报贴顶会显得偏上，居中更接近最终成图的观感。
+    justifyContent: 'center',
     backgroundColor: 'rgba(17,17,15,0.6)',
     zIndex: 100,
   },
