@@ -70,6 +70,18 @@ const SEARCH_GROUPS: SearchGroup[] = [
     ],
   },
   {
+    section: 'ai',
+    icon: 'sparkles-outline',
+    title: 'AI 设置',
+    items: [
+      { title: 'API Base URL', hint: 'OpenAI 兼容的服务接口地址', keywords: '接口 地址 base url api openai 兼容 服务商' },
+      { title: 'API Key', hint: '服务商密钥，仅保存在本地', keywords: '密钥 鉴权 key token 秘钥' },
+      { title: '模型', hint: '从 /models 列表选择或手动填写', keywords: '模型 model gpt deepseek qwen 列表' },
+      { title: '接口模式', hint: '默认 Responses / Chat / 自动适配', keywords: '接口模式 responses chat completions wire api 兼容' },
+      { title: 'AI 解析导入', hint: '导入文件时用 AI 解析整理为标准 Markdown', keywords: '导入 ai 解析 markdown pdf 整理 非标准 转换 文件' },
+    ],
+  },
+  {
     section: 'about',
     icon: 'information-circle-outline',
     title: '基础信息',

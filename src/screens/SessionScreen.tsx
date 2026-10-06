@@ -4,15 +4,18 @@ import { Animated, BackHandler, Easing, FlatList, Pressable, StyleSheet, Text, u
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnnotationEditor } from '../components/AnnotationEditor';
 import { AppButton } from '../components/AppButton';
+import { ImportConfigModal } from '../components/ImportConfigModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import { ShareCardOverlay } from '../components/ShareCardOverlay';
-import { buildSessionCards, importMarkdownDocument, markCardGot, toggleFavorite, unmarkGot } from '../data/repository';
-import type { CardRecord, SessionSummary, Settings } from '../domain/types';
+import { buildSessionCards, markCardGot, toggleFavorite, unmarkGot } from '../data/repository';
+import type { CardRecord, DocumentRecord, FolderRecord, SessionSummary, Settings } from '../domain/types';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 
 type Props = {
   settings: Settings;
+  // 空会话导入文件时选择归属文件夹使用（与知识库导入共用同一配置弹窗）。
+  folders: FolderRecord[];
   // 从首页推荐卡点进来时固定排在流开头的卡片 id；普通入口不传，纯随机抽卡。
   startCardId?: number;
   onClose: () => void;
@@ -20,6 +23,8 @@ type Props = {
   onEnd: (summary: SessionSummary) => void;
   // 空态（没有未读新卡）时引导用户去复习已 get 的卡片。
   onStartReview: () => void;
+  // 导入配置弹窗里「去 AI 设置」的跳转（App 层导航到 settingsDetail 的 ai 分区）。
+  onOpenAiSettings?: () => void;
 };
 
 type EndPage = { type: 'end'; id: 'end' };
@@ -69,7 +74,7 @@ function HeartPop({ pop, topOffset, onDone }: { pop: HeartPopItem; topOffset: nu
   );
 }
 
-export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd, onStartReview }: Props) {
+export function SessionScreen({ settings, folders, startCardId, onClose, onChanged, onEnd, onStartReview, onOpenAiSettings }: Props) {
   const theme = useAppTheme();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -79,6 +84,9 @@ export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState('');
   const [annotationCard, setAnnotationCard] = React.useState<CardRecord | null>(null);
+  // 空会话时的文件导入：与知识库页共用导入配置弹窗（文件夹 / AI 开关 / 文件）。
+  const [importConfigOpen, setImportConfigOpen] = React.useState(false);
+  const defaultSessionFolderId = folders.find((folder) => folder.isDefault === 1)?.id ?? folders[0]?.id ?? null;
   const listRef = React.useRef<FlatList<SessionItem>>(null);
   const snapTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastOuterOffsetRef = React.useRef(0);
@@ -202,20 +210,15 @@ export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd
     return () => subscription.remove();
   }, [onClose]);
 
-  const importFirst = async () => {
-    try {
-      setLoading(true);
-      setMessage('');
-      const result = await importMarkdownDocument();
-      if (result) {
-        setMessage(`已导入 ${result.cards} 张卡片`);
-        onChanged();
-      }
-      await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : '导入失败');
-      setLoading(false);
-    }
+  const importFirst = () => {
+    setImportConfigOpen(true);
+  };
+
+  const handleImported = (result: { document: DocumentRecord; cards: number }, folderName: string) => {
+    setImportConfigOpen(false);
+    setMessage(`已导入《${result.document.title}》到「${folderName}」，生成 ${result.cards} 张卡片`);
+    onChanged();
+    void load();
   };
 
   const sessionItems = React.useMemo<SessionItem[]>(() => [...cards, { type: 'end', id: 'end' }], [cards]);
@@ -342,8 +345,8 @@ export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd
         </Pressable>
         <View style={[styles.emptyCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }] }>
           <Text style={[styles.emptyTitle, { color: theme.ink }]}>没有待 GET 的新卡</Text>
-          <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>导入新的 Markdown 文档继续获取知识，或者去复习已 get 的卡片。</Text>
-          <AppButton label="导入 Markdown" icon="document-attach-outline" onPress={importFirst} />
+          <Text style={[styles.emptyBody, { color: theme.inkMuted }]}>导入新的文件继续获取知识，或者去复习已 get 的卡片。</Text>
+          <AppButton label="导入文件" icon="document-attach-outline" onPress={importFirst} />
           <AppButton label="去复习" icon="repeat" variant="light" onPress={onStartReview} />
           {message ? <Text style={styles.message}>{message}</Text> : null}
         </View>
@@ -403,6 +406,15 @@ export function SessionScreen({ settings, startCardId, onClose, onChanged, onEnd
           onDone={() => setSharingCard(null)}
         />
       ) : null}
+      <ImportConfigModal
+        visible={importConfigOpen}
+        folders={folders}
+        settings={settings}
+        defaultFolderId={defaultSessionFolderId}
+        onClose={() => setImportConfigOpen(false)}
+        onImported={handleImported}
+        onOpenAiSettings={onOpenAiSettings}
+      />
     </View>
   );
 }

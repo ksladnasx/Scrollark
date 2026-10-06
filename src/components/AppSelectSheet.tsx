@@ -89,7 +89,7 @@ export function AppSelectSheet({ visible, title, options, selectedKey, onSelect,
               );
             })}
             {options.length === 0 ? (
-              <Text style={[styles.emptyText, { color: theme.inkMuted }]}>暂无可选项</Text>
+              <Text style={[styles.emptyText, { color: theme.inkMuted }]}>暂无可选项，请获取模型列表后继续</Text>
             ) : null}
             {actionLabel && onAction ? (
               <Pressable

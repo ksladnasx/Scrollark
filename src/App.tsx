@@ -53,6 +53,10 @@ const initialSettings: Settings = {
   homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
   knowledgeListMode: 'folders',
+  aiBaseUrl: '',
+  aiApiKey: '',
+  aiModel: '',
+  aiApiStyle: 'responses',
 };
 
 const pageMeta: Record<TabKey, { title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap }> = {
@@ -272,11 +276,13 @@ export default function App() {
           <StatusBar style={theme.dark ? 'light' : 'dark'} />
           <SessionScreen
             settings={settings}
+            folders={folders}
             startCardId={route.startCardId}
             onClose={() => { void refresh(); goBack(); }}
             onChanged={refreshSoon}
             onEnd={(summary) => { void refresh(); replace({ name: 'sessionEnd', summary }); }}
             onStartReview={() => navigate({ name: 'review' })}
+            onOpenAiSettings={() => navigate({ name: 'settingsDetail', section: 'ai', tab: 'home' })}
           />
           <AppAlertHost fontFamily={settings.fontFamily} />
         </SafeAreaProvider>
@@ -582,6 +588,7 @@ function renderPage(
           cardGroups={data.cardGroups}
           settings={data.settings}
           onImported={() => void data.refresh()}
+          onOpenAiSettings={() => data.navigate({ name: 'settingsDetail', section: 'ai', tab: 'knowledge' })}
           onStartSession={() => data.navigate({ name: 'session' })}
           onShare={data.onShare}
           onChangeListMode={data.onChangeListMode}

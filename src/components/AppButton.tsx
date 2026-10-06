@@ -10,21 +10,25 @@ type Props = {
   icon?: keyof typeof Ionicons.glyphMap;
   variant?: 'dark' | 'light' | 'ghost';
   loading?: boolean;
+  // 置灰不可点（如「确定导入」在未选文件时）；loading 仍然独立生效。
+  disabled?: boolean;
   // 紧凑规格：用于卡片内右列的成组小按钮。
   compact?: boolean;
   style?: ViewStyle;
 };
 
-export function AppButton({ label, onPress, icon, variant = 'dark', loading, compact, style }: Props) {
+export function AppButton({ label, onPress, icon, variant = 'dark', loading, disabled, compact, style }: Props) {
   const theme = useAppTheme();
   const foreground = variant === 'dark' ? theme.paper : theme.ink;
   const background = variant === 'dark' ? theme.accent : variant === 'light' ? theme.paperElevated : 'rgba(255,255,255,0.22)';
+  const inactive = loading || disabled;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(inactive), busy: Boolean(loading) }}
       onPress={onPress}
-      disabled={loading}
-      style={({ pressed }) => [styles.base, styles[variant], compact && styles.compact, { backgroundColor: background }, variant === 'light' && { borderWidth: 1, borderColor: theme.line }, pressed && styles.pressed, style]}
+      disabled={inactive}
+      style={({ pressed }) => [styles.base, styles[variant], compact && styles.compact, { backgroundColor: background }, variant === 'light' && { borderWidth: 1, borderColor: theme.line }, pressed && !inactive && styles.pressed, inactive && styles.inactive, style]}
     >
       {loading ? <ActivityIndicator color={foreground} /> : null}
       {!loading && icon ? <Ionicons name={icon} size={compact ? 15 : 18} color={foreground} /> : null}
@@ -62,6 +66,9 @@ const styles = StyleSheet.create({
   pressed: {
     transform: [{ scale: 0.98 }],
     opacity: 0.86,
+  },
+  inactive: {
+    opacity: 0.45,
   },
   label: {
     fontSize: 15,

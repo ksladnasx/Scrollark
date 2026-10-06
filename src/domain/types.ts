@@ -4,7 +4,7 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 // 知识库列表展示方式：按文件夹浏览（默认），或平铺显示全部文档。
 export type KnowledgeListMode = 'folders' | 'documents';
 // 设置页二级分类：一级页只显示入口，点入后进入对应详情页。
-export type SettingsSection = 'reading' | 'wallpaper' | 'card' | 'pacing' | 'data' | 'about';
+export type SettingsSection = 'reading' | 'wallpaper' | 'card' | 'pacing' | 'data' | 'ai' | 'about';
 export type Route = { name: 'tabs'; tab: TabKey } | { name: 'session'; startCardId?: number } | { name: 'review'; mode?: 'due' | 'ahead' } | { name: 'sessionEnd'; summary: SessionSummary } | { name: 'search' } | { name: 'settingsDetail'; section: SettingsSection; tab: TabKey } | { name: 'favorites'; tab: TabKey };
 
 // get 时的自评等级：1 = 忘了，2 = 模糊，3 = 秒懂。评级驱动复习间隔进退。
@@ -65,6 +65,23 @@ export type CardRecord = {
 
 export type CardInput = Omit<CardRecord, 'id' | 'documentTitle' | 'createdAt' | 'isGot' | 'isFavorite' | 'getCount' | 'lastGotAt' | 'headerImageUrl' | 'annotation' | 'mastery' | 'nextReviewAt' | 'reviewStage'>;
 
+// AI 接口模式：responses = OpenAI Responses API（原生，/v1/responses）；
+// chat = Chat Completions（/v1/chat/completions）；anthropic = Anthropic Messages
+//（/v1/messages）。后两者通常需要中转站开启对应路由。
+export type AiApiStyle = 'responses' | 'chat' | 'anthropic';
+
+// AI 配置方案：一套可命名的 Base URL / Key / 模型 / 接口模式组合，
+// 保存后可在方案列表中一键切换（同名保存视为覆盖更新）。
+export type AiProfileRecord = {
+  id: number;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  apiStyle: AiApiStyle;
+  createdAt: string;
+};
+
 export type Settings = {
   sessionCardCount: number;
   // 到期复习的单次数量（10/20/50），在复习流程页顶部可改；提前复习固定 30 张。
@@ -82,6 +99,12 @@ export type Settings = {
   homeBackgroundDownloadDirectory: string;
   themeMode: ThemeMode;
   knowledgeListMode: KnowledgeListMode;
+  // AI 设置（用户自带 API Key，OpenAI Compatible）：导入 Markdown 时可选用于
+  // 把非标准格式整理成 # / ## / ### 标准结构。只保存在本地 settings 表。
+  aiBaseUrl: string;
+  aiApiKey: string;
+  aiModel: string;
+  aiApiStyle: AiApiStyle;
 };
 
 export type Statistics = {

@@ -11,6 +11,7 @@ import { CardDetailModal } from '../components/CardDetailModal';
 import { CustomCardEditor } from '../components/CustomCardEditor';
 import { DocumentEditor } from '../components/DocumentEditor';
 import { GroupEditor } from '../components/GroupEditor';
+import { ImportConfigModal } from '../components/ImportConfigModal';
 import { KnowledgeCard } from '../components/KnowledgeCard';
 import {
   createCardGroup,
@@ -19,7 +20,6 @@ import {
   deleteCardGroup,
   deleteDocument,
   deleteFolder,
-  importMarkdownDocument,
   isCustomDocument,
   listCardsByDocument,
   listCardsByGroup,
@@ -35,6 +35,8 @@ type Props = {
   cardGroups: CardGroupWithCount[];
   settings: Settings;
   onImported: () => void;
+  // 导入配置弹窗里「去 AI 设置」的跳转（App 层导航到 settingsDetail 的 ai 分区）。
+  onOpenAiSettings?: () => void;
   onStartSession: () => void;
   onShare?: (card: CardRecord) => void;
   // 知识库列表展示方式切换（文件夹 / 文档），持久化由 App 层负责。
@@ -50,7 +52,7 @@ function formatDate(iso: string) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-export function KnowledgeScreen({ documents, cards, folders, cardGroups, settings, onImported, onStartSession, onShare, onChangeListMode }: Props) {
+export function KnowledgeScreen({ documents, cards, folders, cardGroups, settings, onImported, onOpenAiSettings, onStartSession, onShare, onChangeListMode }: Props) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const fontFamily = settings.fontFamily;
@@ -94,9 +96,8 @@ export function KnowledgeScreen({ documents, cards, folders, cardGroups, setting
   // ===== 手写分组编辑（名称 / 所属文件夹） =====
   const [groupEditor, setGroupEditor] = React.useState<CardGroupWithCount | null>(null);
 
-  // ===== 导入文档：先选文件夹（下拉），再进文件选择器 =====
-  const [importFolderOpen, setImportFolderOpen] = React.useState(false);
-  const [importFolderId, setImportFolderId] = React.useState<number | null>(null);
+  // ===== 导入文档：先在配置弹窗里完成 文件夹 / AI 开关 / 文件选择，确定后才走导入流水线 =====
+  const [importConfigOpen, setImportConfigOpen] = React.useState(false);
 
   // ===== 卡片列表容器（文档 / 手写分组通用） =====
   const [container, setContainer] = React.useState<OpenContainer | null>(null);
@@ -150,25 +151,14 @@ export function KnowledgeScreen({ documents, cards, folders, cardGroups, setting
 
   const beginImport = () => {
     if (busy) return;
-    setImportFolderId(defaultFolder?.id ?? null);
-    setImportFolderOpen(true);
+    setImportConfigOpen(true);
   };
 
-  const runImport = async (targetFolderId: number | null) => {
-    if (busy) return;
-    try {
-      setBusy(true);
-      const result = await importMarkdownDocument(targetFolderId);
-      if (result) {
-        const folderName = folders.find((folder) => folder.id === (targetFolderId ?? defaultFolder?.id))?.name ?? '默认文件夹';
-        setMessage(`已导入《${result.document.title}》到「${folderName}」，生成 ${result.cards} 张卡片`);
-        onImported();
-      }
-    } catch (error) {
-      showAlert({ title: '导入失败', message: error instanceof Error ? error.message : '请稍后再试' });
-    } finally {
-      setBusy(false);
-    }
+  // 导入配置弹窗完成全流程后回调：关弹窗、提示结果并刷新数据。
+  const handleImported = (result: { document: DocumentRecord; cards: number }, folderName: string) => {
+    setImportConfigOpen(false);
+    setMessage(`已导入《${result.document.title}》到「${folderName}」，生成 ${result.cards} 张卡片`);
+    onImported();
   };
 
   // ===== 文档删除 =====
@@ -754,14 +744,15 @@ export function KnowledgeScreen({ documents, cards, folders, cardGroups, setting
         </View>
       </Modal>
 
-      {/* 导入文档前的文件夹下拉选择：点选高亮，按「完成」确认后才进入文件选择 */}
-      <AppSelectSheet
-        visible={importFolderOpen}
-        title="选择所属文件夹"
-        options={folderSelectOptions(folders)}
-        selectedKey={importFolderId === null ? null : String(importFolderId)}
-        onConfirm={(key) => { void runImport(Number(key)); }}
-        onClose={() => setImportFolderOpen(false)}
+      {/* 导入配置弹窗：文件夹 / AI 开关 / 文件选择 + 确定后执行导入流水线 */}
+      <ImportConfigModal
+        visible={importConfigOpen}
+        folders={folders}
+        settings={settings}
+        defaultFolderId={defaultFolder?.id ?? null}
+        onClose={() => setImportConfigOpen(false)}
+        onImported={handleImported}
+        onOpenAiSettings={onOpenAiSettings}
       />
 
       {/* 新建文件夹对话框（仅知识库页提供） */}
@@ -849,7 +840,7 @@ export function KnowledgeScreen({ documents, cards, folders, cardGroups, setting
           style={[styles.fabMenu, { opacity: fabAnim, transform: [{ translateY: fabAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}
         >
           {([
-            { icon: 'add-outline' as const, label: '导入 .md', onPress: () => { toggleFab(false); beginImport(); } },
+            { icon: 'add-outline' as const, label: '导入文件', onPress: () => { toggleFab(false); beginImport(); } },
             { icon: 'pencil-outline' as const, label: '手写卡片', onPress: () => { toggleFab(false); openCardEditor(null); } },
             { icon: 'flash-outline' as const, label: '开始 GET', onPress: () => { toggleFab(false); onStartSession(); } },
           ]).map((item) => (

@@ -61,6 +61,12 @@ export function SettingsScreen({ settings, onOpenSection }: Props) {
       summary: () => '备份导出与导入 · 清空本地数据',
     },
     {
+      key: 'ai',
+      icon: 'sparkles-outline',
+      title: 'AI 设置',
+      summary: (current) => (current.aiModel.trim() !== '' ? `模型 ${current.aiModel.trim()}` : '未配置 · 导入时可选用 AI 整理文档'),
+    },
+    {
       key: 'about',
       icon: 'information-circle-outline',
       title: '基础信息',
@@ -68,12 +74,13 @@ export function SettingsScreen({ settings, onOpenSection }: Props) {
     },
   ];
 
-  // 与系统设置一致的分块：学习相关一块、壁纸相关一块、数据与基础信息各自单独一块。
+  // 与系统设置一致的分块：学习相关一块、壁纸相关一块、数据 / AI / 基础信息各自单独一块。
   const groups: Entry[][] = [
     [entries[0], entries[1]],
     [entries[2], entries[3]],
     [entries[4]],
     [entries[5]],
+    [entries[6]],
   ];
 
   return (

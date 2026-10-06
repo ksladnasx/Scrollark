@@ -1,27 +1,35 @@
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { BackHandler, Linking as ReactLinking, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Linking as ReactLinking, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { showAlert } from '../components/AppAlert';
 import { AppButton } from '../components/AppButton';
+import { AppSelectSheet, SelectField } from '../components/AppSelectSheet';
 import { clearResolvedCardImages, pruneUnreferencedCardImages } from '../components/CardHeaderImage';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URLS, imageSourceLabel } from '../config/imageUrls';
 import {
   clearCardHeaderImageUrls,
+  deleteAiProfile,
   exportBackupData,
+  getAiModelCatalog,
   getReferencedCardImageUrls,
+  listAiProfiles,
   readBackupFile,
   resetAllData,
   restoreBackupData,
+  saveAiModelCatalog,
+  saveAiProfile,
   updateSetting,
+  type AiModelMapping,
   type BackupPayload,
 } from '../data/repository';
-import type { Settings, SettingsSection } from '../domain/types';
+import type { AiProfileRecord, Settings, SettingsSection } from '../domain/types';
 import { fontOptions } from '../theme/fonts';
 import { useAppTheme } from '../theme/ThemeContext';
-import { radius, type AppTheme } from '../theme/tokens';
+import { radius, palette, type AppTheme } from '../theme/tokens';
+import { AI_FEATURE_HINT, fetchAiModels } from '../utils/ai';
 import { getReadableHomeBackgroundDownloadDirectory, pickHomeBackgroundDownloadDirectory, refreshHomeBackgroundImageUri } from '../utils/homeBackground';
 
 type Props = {
@@ -37,7 +45,7 @@ type Props = {
 type SourceOption = { url: string; label: string };
 type Status = { kind: 'ok' | 'error' | 'busy'; text: string } | null;
 
-export const APP_VERSION = Constants.expoConfig?.version ?? '0.3.0';
+export const APP_VERSION = Constants.expoConfig?.version ?? '0.4.0';
 export const APP_REPO_URL = 'https://github.com/ksladnasx/Scrollark';
 
 // 阅读偏好实时预览的演示文段：刻意覆盖标题、加粗、行内代码、高亮、代码块与引用，
@@ -66,6 +74,7 @@ const SECTION_TITLES: Record<SettingsSection, string> = {
   card: '卡片背景',
   pacing: '阅读节奏',
   data: '数据管理',
+  ai: 'AI 设置',
   about: '基础信息',
 };
 
@@ -100,6 +109,129 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
     await updateSetting(key, value);
     onSettingsChanged({ ...settings, [key]: value });
   };
+
+  // ===== AI 配置草稿：编辑期间不落库，点「保存配置」才写入；退出未保存会提示 =====
+  // 输入框完全受控（键入即更新草稿），避免「改完直接点保存」时失焦提交丢失修改。
+  const [aiDraft, setAiDraft] = React.useState({ baseUrl: '', apiKey: '', model: '', apiStyle: 'responses' as Settings['aiApiStyle'] });
+  const [aiSaving, setAiSaving] = React.useState(false);
+  const [aiStatus, setAiStatus] = React.useState<Status>(null);
+  // 配置方案：命名的整组配置，保存后可一键切换；进入分区时加载列表。
+  const [aiProfiles, setAiProfiles] = React.useState<AiProfileRecord[]>([]);
+  const [aiProfileDialogOpen, setAiProfileDialogOpen] = React.useState(false);
+  const [aiProfileNameDraft, setAiProfileNameDraft] = React.useState('');
+  const [aiProfileSaving, setAiProfileSaving] = React.useState(false);
+  const [aiProfileDialogConfig, setAiProfileDialogConfig] = React.useState<{ baseUrl: string; apiKey: string; model: string; apiStyle: Settings['aiApiStyle'] } | null>(null);
+  // 进入 AI 分区时把草稿同步为已保存的配置，并加载方案列表；切换到其他分区即视为放弃未保存修改。
+  React.useEffect(() => {
+    if (section === 'ai') {
+      setAiDraft({ baseUrl: settings.aiBaseUrl, apiKey: settings.aiApiKey, model: settings.aiModel, apiStyle: settings.aiApiStyle });
+      setAiStatus(null);
+      listAiProfiles()
+        .then(setAiProfiles)
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
+  const aiDirty =
+    aiDraft.baseUrl !== settings.aiBaseUrl ||
+    aiDraft.apiKey !== settings.aiApiKey ||
+    aiDraft.model !== settings.aiModel ||
+    aiDraft.apiStyle !== settings.aiApiStyle;
+
+  const persistAiProfile = React.useCallback(async (name: string, config: { baseUrl: string; apiKey: string; model: string; apiStyle: Settings['aiApiStyle'] }) => {
+    try {
+      await saveAiProfile(name, config);
+      setAiProfiles(await listAiProfiles());
+      setAiStatus({ kind: 'ok', text: `已保存方案「${name.trim()}」。` });
+    } catch (error) {
+      setAiStatus({ kind: 'error', text: error instanceof Error ? error.message : '方案保存失败' });
+    }
+  }, []);
+
+  const saveAiDraft = React.useCallback(async () => {
+    const next = { aiBaseUrl: aiDraft.baseUrl.trim(), aiApiKey: aiDraft.apiKey.trim(), aiModel: aiDraft.model.trim(), aiApiStyle: aiDraft.apiStyle };
+    try {
+      setAiSaving(true);
+      await Promise.all([updateSetting('aiBaseUrl', next.aiBaseUrl), updateSetting('aiApiKey', next.aiApiKey), updateSetting('aiModel', next.aiModel), updateSetting('aiApiStyle', next.aiApiStyle)]);
+      onSettingsChanged({ ...settings, ...next });
+      setAiDraft({ baseUrl: next.aiBaseUrl, apiKey: next.aiApiKey, model: next.aiModel, apiStyle: next.aiApiStyle });
+      setAiStatus({ kind: 'ok', text: 'AI 配置已保存。' });
+      // 保存成功后询问是否存为配置方案：与现有方案完全一致时提供「更新」，否则只能另存。
+      const saved = { baseUrl: next.aiBaseUrl, apiKey: next.aiApiKey, model: next.aiModel, apiStyle: next.aiApiStyle };
+      const matched = aiProfiles.find((profile) => profile.baseUrl === saved.baseUrl && profile.apiKey === saved.apiKey && profile.model === saved.model && profile.apiStyle === saved.apiStyle);
+      const buttons: { text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }[] = [{ text: '不保存', style: 'cancel' }];
+      if (matched) {
+        buttons.push({ text: `更新「${matched.name}」`, onPress: () => { void persistAiProfile(matched.name, saved); } });
+      }
+      buttons.push({
+        text: '存为新方案',
+        onPress: () => {
+          setAiProfileDialogConfig(saved);
+          setAiProfileNameDraft(matched?.name || next.aiModel.trim() || 'AI 方案');
+          setAiProfileDialogOpen(true);
+        },
+      });
+      showAlert({ title: '已保存', message: '是否把这套配置保存为方案？保存后可在「配置方案」里一键切换。', buttons });
+    } catch {
+      setAiStatus({ kind: 'error', text: '保存失败，请重试。' });
+    } finally {
+      setAiSaving(false);
+    }
+  }, [aiDraft, aiProfiles, onSettingsChanged, persistAiProfile, settings]);
+
+  const confirmSaveAiProfile = React.useCallback(async () => {
+    if (aiProfileSaving || !aiProfileDialogConfig) return;
+    const name = aiProfileNameDraft.trim();
+    if (!name) return;
+    try {
+      setAiProfileSaving(true);
+      await saveAiProfile(name, aiProfileDialogConfig);
+      setAiProfiles(await listAiProfiles());
+      setAiProfileDialogOpen(false);
+      setAiStatus({ kind: 'ok', text: `已保存方案「${name}」。` });
+    } catch (error) {
+      setAiStatus({ kind: 'error', text: error instanceof Error ? error.message : '方案保存失败' });
+    } finally {
+      setAiProfileSaving(false);
+    }
+  }, [aiProfileDialogConfig, aiProfileNameDraft, aiProfileSaving]);
+
+  const removeAiProfile = React.useCallback(async (profile: AiProfileRecord) => {
+    try {
+      await deleteAiProfile(profile.id);
+      setAiProfiles(await listAiProfiles());
+      setAiStatus({ kind: 'ok', text: `已删除方案「${profile.name}」。` });
+    } catch {
+      setAiStatus({ kind: 'error', text: '方案删除失败，请重试。' });
+    }
+  }, []);
+
+  // 返回拦截：AI 配置有未保存修改时先询问（保存并退出 / 不保存 / 继续编辑）。
+  const requestBack = React.useCallback(() => {
+    if (section === 'ai' && aiDirty) {
+      showAlert({
+        title: '有未保存的修改',
+        message: 'AI 配置已修改但尚未保存，直接退出将丢失这些修改。',
+        buttons: [
+          { text: '继续编辑', style: 'cancel' },
+          { text: '不保存', style: 'destructive', onPress: onBack },
+          { text: '保存并退出', onPress: () => { void saveAiDraft().then(onBack); } },
+        ],
+      });
+      return;
+    }
+    onBack();
+  }, [aiDirty, onBack, saveAiDraft, section]);
+
+  // AI 配置未保存时拦截系统返回键（无修改时交给 App 层的全局返回处理）。
+  React.useEffect(() => {
+    if (section !== 'ai' || !aiDirty) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      requestBack();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [aiDirty, requestBack, section]);
 
   const switchHomeBackground = async () => {
     if (homeBusy) return;
@@ -288,7 +420,7 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="返回设置"
-          onPress={onBack}
+          onPress={requestBack}
           style={({ pressed }) => [styles.backButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}
         >
           <Ionicons name="chevron-back" size={23} color={theme.ink} />
@@ -497,6 +629,24 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
           </>
         ) : null}
 
+        {section === 'ai' ? (
+          <AiSettingsSection
+            settings={settings}
+            draft={aiDraft}
+            saving={aiSaving}
+            status={aiStatus}
+            profiles={aiProfiles}
+            onDraftChange={setAiDraft}
+            onSave={() => { void saveAiDraft(); }}
+            onPickProfile={(profile) =>
+              setAiDraft({ baseUrl: profile.baseUrl, apiKey: profile.apiKey, model: profile.model, apiStyle: profile.apiStyle })
+            }
+            onDeleteProfile={(profile) => {
+              void removeAiProfile(profile);
+            }}
+          />
+        ) : null}
+
         {section === 'about' ? (
           <>
             <View style={[styles.aboutCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
@@ -530,6 +680,37 @@ export function SettingsDetailScreen({ section, settings, onSettingsChanged, onR
           </>
         ) : null}
       </ScrollView>
+
+      {/* 方案命名弹窗：保存成功后选择「存为新方案」时输入名称（同名覆盖更新） */}
+      {section === 'ai' ? (
+        <Modal visible={aiProfileDialogOpen} transparent animationType="fade" onRequestClose={() => setAiProfileDialogOpen(false)}>
+          <View style={styles.aiDialogBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setAiProfileDialogOpen(false)} />
+            <View style={[styles.aiDialog, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+              <Text style={[styles.aiDialogTitle, { color: theme.ink, fontFamily }]}>保存配置方案</Text>
+              <TextInput
+                value={aiProfileNameDraft}
+                onChangeText={setAiProfileNameDraft}
+                placeholder="方案名称"
+                placeholderTextColor={palette.inkMuted}
+                autoFocus
+                style={[styles.aiDialogInput, { fontFamily, backgroundColor: theme.paperSoft, color: theme.ink }]}
+              />
+              <View style={styles.aiDialogActions}>
+                <AppButton label="取消" variant="light" style={styles.aiDialogButton} onPress={() => setAiProfileDialogOpen(false)} />
+                <AppButton
+                  label="保存方案"
+                  icon="save-outline"
+                  style={styles.aiDialogButton}
+                  loading={aiProfileSaving}
+                  disabled={!aiProfileNameDraft.trim() || !aiProfileDialogConfig}
+                  onPress={() => { void confirmSaveAiProfile(); }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -539,6 +720,403 @@ function AboutRow({ label, value, theme, fontFamily }: { label: string; value: s
     <View style={styles.aboutRow}>
       <Text style={[styles.aboutLabel, { color: theme.inkMuted, fontFamily }]}>{label}</Text>
       <Text style={[styles.aboutValue, { color: theme.ink, fontFamily }]}>{value}</Text>
+    </View>
+  );
+}
+
+// AI 设置分区：用户自带 API Key（OpenAI Compatible）。各项配置在草稿里编辑，
+// 点「保存配置」才写入本地 settings 表；接口模式支持 Chat Completions / Responses
+// （wire_api = "responses" 的中转站）或自动适配；支持 /models 的服务可拉取模型列表。
+// 找出映射表里重复的显示名称（忽略空白名与首尾空格差异）。
+function duplicateMappingNames(items: AiModelMapping[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const name = item.name.trim();
+    if (name !== '') counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name));
+}
+
+function hasDuplicateMappingNames(items: AiModelMapping[]): boolean {
+  return duplicateMappingNames(items).size > 0;
+}
+
+function AiSettingsSection({ settings, draft, saving, status, profiles, onDraftChange, onSave, onPickProfile, onDeleteProfile }: {
+  settings: Settings;
+  draft: { baseUrl: string; apiKey: string; model: string; apiStyle: Settings['aiApiStyle'] };
+  saving: boolean;
+  status: Status;
+  profiles: AiProfileRecord[];
+  onDraftChange: (next: { baseUrl: string; apiKey: string; model: string; apiStyle: Settings['aiApiStyle'] }) => void;
+  onSave: () => void;
+  onPickProfile: (profile: AiProfileRecord) => void;
+  onDeleteProfile: (profile: AiProfileRecord) => void;
+}) {
+  const theme = useAppTheme();
+  const fontFamily = settings.fontFamily;
+  // 模型映射缓存（菜单显示名 → 实际请求模型）：与获取时的 Base URL + API Key 绑定，
+  // 端点或 Key 修改后自动失效，重新获取即重建。
+  const [catalog, setCatalog] = React.useState<AiModelMapping[]>([]);
+  const [modelsBusy, setModelsBusy] = React.useState(false);
+  const [modelsStatus, setModelsStatus] = React.useState<Status>(null);
+  const [modelSheetOpen, setModelSheetOpen] = React.useState(false);
+  const [profileSheetOpen, setProfileSheetOpen] = React.useState(false);
+  // 使用说明折叠态：默认收起，点标题行展开。
+  const [guideOpen, setGuideOpen] = React.useState(false);
+  // 模型映射折叠态：默认收起（列表可能很长），点标题行展开编辑。
+  const [mappingsOpen, setMappingsOpen] = React.useState(false);
+  const draftEndpoint = { baseUrl: draft.baseUrl.trim().replace(/\/+$/, ''), apiKey: draft.apiKey.trim() };
+  const canFetchModels = draftEndpoint.baseUrl !== '' && draftEndpoint.apiKey !== '';
+  // 草稿与某个已保存方案完全一致时，配置方案字段直接显示该方案名。
+  const draftProfile = profiles.find(
+    (profile) =>
+      profile.baseUrl === draft.baseUrl.trim() &&
+      profile.apiKey === draft.apiKey.trim() &&
+      profile.model === draft.model.trim() &&
+      profile.apiStyle === draft.apiStyle,
+  );
+  const draftDirty =
+    draft.baseUrl !== settings.aiBaseUrl || draft.apiKey !== settings.aiApiKey || draft.model !== settings.aiModel || draft.apiStyle !== settings.aiApiStyle;
+  // 重名的显示名称标红提示（重名条目不会写入缓存）。
+  const duplicateNames = duplicateMappingNames(catalog);
+  const catalogHasDuplicates = duplicateNames.size > 0;
+
+  const fetchCatalog = async (silent: boolean) => {
+    if (modelsBusy) return;
+    if (!canFetchModels) {
+      setModelsStatus({ kind: 'error', text: '请先填写 API Base URL 与 API Key，再获取模型列表。' });
+      return;
+    }
+    try {
+      setModelsBusy(true);
+      if (!silent) setModelsStatus({ kind: 'busy', text: '正在获取模型列表……' });
+      const models = await fetchAiModels({ baseUrl: draftEndpoint.baseUrl, apiKey: draftEndpoint.apiKey, model: draft.model.trim(), apiStyle: draft.apiStyle });
+      // 同端点同 Key：仅追加新增的模型；端点或 Key 变更后旧缓存已失效，整表替换。
+      const existing = await getAiModelCatalog(draftEndpoint.baseUrl, draftEndpoint.apiKey);
+      const known = new Set(existing.map((item) => item.model));
+      const merged = [...existing, ...models.filter((id) => !known.has(id)).map((id) => ({ name: id, model: id }))];
+      await saveAiModelCatalog(draftEndpoint.baseUrl, draftEndpoint.apiKey, merged);
+      setCatalog(merged);
+      setModelsStatus({ kind: 'ok', text: `已获取模型列表（共 ${merged.length} 项）。` });
+    } catch (error) {
+      setModelsStatus({ kind: 'error', text: error instanceof Error ? error.message : '获取模型列表失败，可手动添加模型。' });
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  // 显示名称重名时阻断写入（导入下拉继续使用上一份有效列表），弹窗提示一次；
+  // 改掉重名后恢复写入。
+  const mappingDuplicateAlertedRef = React.useRef(false);
+  const commitMapping = (items: AiModelMapping[]) => {
+    setCatalog(items);
+    if (hasDuplicateMappingNames(items)) {
+      if (!mappingDuplicateAlertedRef.current) {
+        mappingDuplicateAlertedRef.current = true;
+        showAlert({ title: '显示名称重复', message: '存在相同的显示名称，重名的映射不会被保存。请修改为不同的名称后再试。' });
+      }
+      return;
+    }
+    mappingDuplicateAlertedRef.current = false;
+    void saveAiModelCatalog(draftEndpoint.baseUrl, draftEndpoint.apiKey, items).catch(() => undefined);
+  };
+
+  const updateMapping = (index: number, patch: Partial<AiModelMapping>) => {
+    // 键入即落库，但显示名称重名时阻断写入并弹窗提示（重名条目不会进入导入下拉）。
+    commitMapping(catalog.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  };
+
+  const addMapping = () => {
+    commitMapping([...catalog, { name: '', model: '' }]);
+  };
+
+  const removeMapping = (index: number) => {
+    // 删除是明确意图：即使列表仍有重名也照常落库。
+    const next = catalog.filter((_, itemIndex) => itemIndex !== index);
+    setCatalog(next);
+    if (!hasDuplicateMappingNames(next)) mappingDuplicateAlertedRef.current = false;
+    void saveAiModelCatalog(draftEndpoint.baseUrl, draftEndpoint.apiKey, next).catch(() => undefined);
+  };
+
+  // 模型映射跟随「草稿端点 + Key」的指纹加载本地缓存：端点或 Key 变更后自动失效；
+  // 缓存为空且连接信息完整时自动静默拉取一次模型列表。草稿由父级在进入分区时同步，
+  // 因此以指纹（而非挂载时机）为依赖，保证拿到的是同步后的真实值。
+  const catalogKey = `${draftEndpoint.baseUrl}::${draftEndpoint.apiKey}`;
+  React.useEffect(() => {
+    if (!canFetchModels) {
+      setCatalog([]);
+      return;
+    }
+    let alive = true;
+    // 轻微防抖：避免逐字输入端点时列表反复闪空。
+    const timer = setTimeout(() => {
+      getAiModelCatalog(draftEndpoint.baseUrl, draftEndpoint.apiKey)
+        .then((items) => {
+          if (!alive) return;
+          setCatalog(items);
+          if (items.length === 0) void fetchCatalog(true);
+        })
+        .catch(() => undefined);
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogKey]);
+
+  return (
+    <>
+      <Section icon="sparkles-outline" title="AI 连接" theme={theme} settings={settings}>
+        <Rows theme={theme}>
+          <View style={styles.rowInner}>
+            <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>配置方案</Text>
+            <SelectField
+              icon="layers-outline"
+              value={draftProfile?.name ?? (draftDirty ? '未保存的修改' : '自定义')}
+              placeholder="选择已保存的方案"
+              onPress={() => setProfileSheetOpen(true)}
+            />
+          </View>
+          <AiInputRow
+            label="API Base URL"
+            value={draft.baseUrl}
+            placeholder="https://api.openai.com/v1"
+            hint="API 根地址即可，如 https://sub.sailapi.top"
+            theme={theme}
+            settings={settings}
+            onChangeText={(value) => onDraftChange({ ...draft, baseUrl: value })}
+          />
+          <AiInputRow
+            label="API Key"
+            value={draft.apiKey}
+            placeholder="sk-..."
+            secure
+            theme={theme}
+            settings={settings}
+            onChangeText={(value) => onDraftChange({ ...draft, apiKey: value })}
+          />
+          <ChipRow label="接口模式" theme={theme} settings={settings}>
+            {([
+              ['Responses（原生）', 'responses'],
+              ['Chat Completions（需开启路由）', 'chat'],
+              ['Anthropic Messages（需开启路由）', 'anthropic'],
+            ] as const).map(([label, value]) => (
+              <Chip
+                key={value}
+                label={label}
+                active={draft.apiStyle === value}
+                theme={theme}
+                onPress={() => onDraftChange({ ...draft, apiStyle: value })}
+              />
+            ))}
+          </ChipRow>
+          <View style={styles.rowInner}>
+            <Text style={[styles.aiHintText, { color: theme.inkMuted }]}>默认 Responses；Chat / Anthropic 需中转站支持对应路由。</Text>
+          </View>
+          <View style={styles.rowInner}>
+            <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>默认模型</Text>
+            <SelectField
+              icon="cube-outline"
+              value={draft.model || '未选择'}
+              placeholder="从模型映射中选择"
+              onPress={() => setModelSheetOpen(true)}
+            />
+          </View>
+        </Rows>
+      </Section>
+      {/* 模型映射：默认折叠（列表可能很长），点标题行展开编辑 */}
+      <View style={styles.section}>
+        <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line, overflow: 'hidden' }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: mappingsOpen }}
+            onPress={() => setMappingsOpen((current) => !current)}
+            style={({ pressed }) => [styles.guideHead, pressed && styles.pressed]}
+          >
+            <View style={[styles.sectionIcon, { backgroundColor: theme.paperSoft }]}>
+              <Ionicons name="swap-horizontal-outline" size={14} color={theme.accent} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily, flex: 1 }]}>模型映射</Text>
+            {catalog.length > 0 ? (
+              <Text style={[styles.aiHintText, { color: theme.inkMuted }]}>{catalog.length} 项</Text>
+            ) : null}
+            <Ionicons name={mappingsOpen ? 'chevron-up' : 'chevron-down'} size={14} color={theme.inkMuted} />
+          </Pressable>
+          {mappingsOpen ? (
+            <>
+              <View style={[styles.divider, { backgroundColor: theme.line }]} />
+              <View style={[styles.actionRow, styles.aiActionsRow]}>
+                <AppButton label="获取模型列表" icon="refresh-outline" variant="light" style={styles.aiActionButton} loading={modelsBusy} disabled={!canFetchModels} onPress={() => { void fetchCatalog(false); }} />
+                <AppButton label="添加模型" icon="add-outline" variant="light" style={styles.aiActionButton} onPress={addMapping} />
+              </View>
+              {catalog.length === 0 ? (
+                <View style={styles.rowInner}>
+                  <Text style={[styles.aiHintText, { color: theme.inkMuted }]}>暂无映射：获取模型列表或手动添加。</Text>
+                </View>
+              ) : (
+                [
+                  <View key="mapping-header" style={styles.mappingHeader}>
+                    <Text style={[styles.mappingHeaderText, { color: theme.inkMuted }]}>显示名称</Text>
+                    <Text style={[styles.mappingHeaderText, styles.mappingHeaderModel, { color: theme.inkMuted }]}>实际模型</Text>
+                    <View style={styles.mappingDelete} />
+                  </View>,
+                  ...catalog.map((item, index) => (
+                    <View key={`mapping-${index}`} style={styles.mappingRow}>
+                <TextInput
+                  value={item.name}
+                  onChangeText={(value) => updateMapping(index, { name: value })}
+                  placeholder="显示名称"
+                  placeholderTextColor={palette.inkMuted}
+                  style={[styles.mappingInput, { backgroundColor: theme.paperSoft, borderColor: duplicateNames.has(item.name.trim()) ? theme.red : theme.line, color: theme.ink, fontFamily }]}
+                />
+                      <TextInput
+                        value={item.model}
+                        onChangeText={(value) => updateMapping(index, { model: value })}
+                        placeholder="实际模型"
+                        placeholderTextColor={palette.inkMuted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={[styles.mappingInput, styles.mappingModelInput, { backgroundColor: theme.paperSoft, borderColor: theme.line, color: theme.ink, fontFamily }]}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`删除映射 ${item.name || item.model || index + 1}`}
+                        onPress={() => removeMapping(index)}
+                        style={({ pressed }) => [styles.mappingDelete, pressed && styles.pressed]}
+                      >
+                        <Ionicons name="trash-outline" size={15} color={theme.red} />
+                      </Pressable>
+                    </View>
+                  )),
+                ]
+              )}
+              {catalogHasDuplicates ? (
+                <View style={styles.rowInner}>
+                  <Text style={[styles.aiHintText, { color: theme.red }]}>存在重复的显示名称，重名的映射不会被保存。</Text>
+                </View>
+              ) : null}
+              {modelsStatus ? <View style={styles.rowInner}><StatusLine status={modelsStatus} theme={theme} fontFamily={fontFamily} /></View> : null}
+            </>
+          ) : null}
+        </View>
+      </View>
+      {/* 保存配置：置于页面最后（使用说明之前），保存结果在按钮下方展示 */}
+      <View style={styles.section}>
+        <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line }]}>
+          <View style={styles.actionRow}>
+            <AppButton label="保存配置" icon="save-outline" loading={saving} onPress={onSave} />
+          </View>
+          {status ? <View style={styles.rowInner}><StatusLine status={status} theme={theme} fontFamily={fontFamily} /></View> : null}
+        </View>
+      </View>
+      {/* 使用说明默认折叠：点击标题行（含图标）展开详情，保持设置页整洁 */}
+      <View style={styles.section}>
+        <View style={[styles.card, { backgroundColor: theme.paperElevated, borderColor: theme.line, overflow: 'hidden' }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: guideOpen }}
+            onPress={() => setGuideOpen((current) => !current)}
+            style={({ pressed }) => [styles.guideHead, pressed && styles.pressed]}
+          >
+            <View style={[styles.sectionIcon, { backgroundColor: theme.paperSoft }]}>
+              <Ionicons name="information-circle-outline" size={14} color={theme.accent} />
+            </View>
+            <Text style={[styles.sectionTitle, { color: theme.ink, fontFamily, flex: 1 }]}>使用说明</Text>
+            <Ionicons name={guideOpen ? 'chevron-up' : 'chevron-down'} size={14} color={theme.inkMuted} />
+          </Pressable>
+          {guideOpen ? (
+            <>
+              <View style={[styles.divider, { backgroundColor: theme.line }]} />
+              <View style={styles.rowInner}>
+                <Text style={[styles.aiHintText, { color: theme.inkMuted, fontFamily }]}>{AI_FEATURE_HINT}</Text>
+                <Text style={[styles.aiHintText, { color: theme.inkMuted, fontFamily }]}>
+                  采用「用户自带 API Key」模式：请求由设备直接发往你配置的服务商，Key 与文档内容不会经过任何第三方服务器。修改配置后记得点「保存配置」。
+                </Text>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+      {/* 配置方案选择：确认模式下点选高亮、按「完成」载入整组配置；底部动作删除当前方案 */}
+      <AppSelectSheet
+        visible={profileSheetOpen}
+        title="选择配置方案"
+        options={profiles.map((profile) => ({ key: String(profile.id), label: profile.name, hint: profile.model || undefined }))}
+        selectedKey={draftProfile ? String(draftProfile.id) : null}
+        onConfirm={(key) => {
+          const profile = profiles.find((item) => String(item.id) === key);
+          if (profile) onPickProfile(profile);
+        }}
+        onClose={() => setProfileSheetOpen(false)}
+        actionLabel="删除当前方案"
+        onAction={() => {
+          if (!draftProfile) {
+            showAlert({ title: '未选择方案', message: '请先在列表中选择并确认一个方案，再进行删除。' });
+            return;
+          }
+          showAlert({
+            title: '删除方案',
+            message: `将删除方案「${draftProfile.name}」，当前已保存的 AI 配置不受影响。此操作无法撤销。`,
+            buttons: [
+              { text: '取消', style: 'cancel' },
+              { text: '删除', style: 'destructive', onPress: () => onDeleteProfile(draftProfile) },
+            ],
+          });
+        }}
+      />
+      {/* 默认模型选择：选项来自模型映射的菜单显示名，选中项的实际模型写入草稿 */}
+      <AppSelectSheet
+        visible={modelSheetOpen}
+        title="选择默认模型"
+        options={catalog.map((item) => ({ key: item.model, label: item.name }))}
+        selectedKey={draft.model}
+        onSelect={(key) => onDraftChange({ ...draft, model: key })}
+        onClose={() => setModelSheetOpen(false)}
+      />
+    </>
+  );
+}
+
+// 文本输入行：完全受控（键入即回调上层更新草稿），统一由「保存配置」落库；
+// 不依赖失焦提交，避免「改完直接点保存」丢修改。
+function AiInputRow({ label, value, placeholder, hint, secure, theme, settings, onChangeText }: {
+  label: string;
+  value: string;
+  placeholder: string;
+  hint?: string;
+  secure?: boolean;
+  theme: AppTheme;
+  settings: Settings;
+  onChangeText: (value: string) => void;
+}) {
+  const [reveal, setReveal] = React.useState(false);
+  return (
+    <View style={styles.rowInner}>
+      <Text style={[styles.rowLabel, { color: theme.ink, fontFamily: settings.fontFamily }]}>{label}</Text>
+      <View style={[styles.aiInputWrap, { backgroundColor: theme.paperSoft, borderColor: theme.line }]}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={palette.inkMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry={Boolean(secure) && !reveal}
+          style={[styles.aiInput, { color: theme.ink, fontFamily: settings.fontFamily }]}
+        />
+        {secure ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={reveal ? '隐藏 API Key' : '显示 API Key'}
+            onPress={() => setReveal((current) => !current)}
+            style={({ pressed }) => [styles.aiReveal, pressed && styles.pressed]}
+          >
+            <Ionicons name={reveal ? 'eye-off-outline' : 'eye-outline'} size={16} color={palette.inkMuted} />
+          </Pressable>
+        ) : null}
+      </View>
+      {hint ? <Text style={[styles.aiHintText, { color: theme.inkMuted }]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -760,6 +1338,26 @@ const styles = StyleSheet.create({
   backupHint: { fontSize: 12, lineHeight: 18, fontWeight: '600', paddingHorizontal: 16, paddingBottom: 14 },
   dangerButton: { minHeight: 48, borderRadius: radius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
   dangerText: { fontSize: 14, fontWeight: '800' },
+  aiInputWrap: { minHeight: 46, borderRadius: radius.lg, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingRight: 6 },
+  aiInput: { flex: 1, minHeight: 44, paddingHorizontal: 14, fontSize: 14, fontWeight: '600' },
+  aiReveal: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  aiHintText: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  aiActionsRow: { flexDirection: 'row', gap: 10 },
+  aiActionButton: { flex: 1 },
+  guideHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 14 },
+  mappingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
+  mappingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
+  mappingHeaderText: { flex: 1, fontSize: 11, fontWeight: '800' },
+  mappingHeaderModel: { flex: 1.2 },
+  mappingInput: { flex: 1, minHeight: 42, borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: 10, fontSize: 13, fontWeight: '600' },
+  mappingModelInput: { flex: 1.2 },
+  mappingDelete: { width: 32, height: 36, alignItems: 'center', justifyContent: 'center' },
+  aiDialogBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(17,17,15,0.5)' },
+  aiDialog: { width: '86%', maxWidth: 400, borderRadius: radius.xl, borderWidth: 1, padding: 18, gap: 12 },
+  aiDialogTitle: { fontSize: 16, fontWeight: '900' },
+  aiDialogInput: { minHeight: 46, borderRadius: radius.lg, borderWidth: 1, paddingHorizontal: 14, fontSize: 14, fontWeight: '600' },
+  aiDialogActions: { flexDirection: 'row', gap: 10 },
+  aiDialogButton: { flex: 1 },
   aboutCard: { borderRadius: radius.xl, borderWidth: 1, overflow: 'hidden' },
   aboutHero: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18 },
   aboutIcon: { width: 54, height: 54, borderRadius: 16 },

@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as SQLite from 'expo-sqlite';
-import type { CardGroupRecord, CardGroupWithCount, CardRecord, DocumentRecord, FolderRecord, MasteryRating, Settings, Statistics } from '../domain/types';
+import type { AiProfileRecord, CardGroupRecord, CardGroupWithCount, CardRecord, DocumentRecord, FolderRecord, MasteryRating, Settings, Statistics } from '../domain/types';
 import { parseMarkdownToCards } from '../utils/markdown';
 import { CARD_REMOTE_IMAGE_URLS, HOME_BACKGROUND_IMAGE_URL, HOME_BACKGROUND_IMAGE_URLS } from '../config/imageUrls';
 import { fontOptions } from '../theme/fonts';
@@ -24,6 +24,10 @@ const DEFAULT_SETTINGS: Settings = {
   homeBackgroundDownloadDirectory: '',
   themeMode: 'system',
   knowledgeListMode: 'folders',
+  aiBaseUrl: '',
+  aiApiKey: '',
+  aiModel: '',
+  aiApiStyle: 'responses',
 };
 
 type CountRow = { count: number };
@@ -106,6 +110,16 @@ async function migrate() {
       createdAt TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS ai_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      baseUrl TEXT NOT NULL,
+      apiKey TEXT NOT NULL,
+      model TEXT NOT NULL,
+      apiStyle TEXT NOT NULL,
+      createdAt TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_cards_document ON cards(documentId);
     CREATE INDEX IF NOT EXISTS idx_cards_last_got ON cards(lastGotAt);
     CREATE INDEX IF NOT EXISTS idx_events_created ON events(createdAt);
@@ -167,6 +181,21 @@ async function migrate() {
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await db.runAsync('INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)', key, String(value));
   }
+
+  // 一次性迁移：aiApiStyle 默认值由 auto 调整为 responses。只把从未被用户改过的
+  // 默认值（仍为 auto）改写，标记键保证只执行一次，不影响用户之后主动选择的值。
+  const styleMigrated = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', 'aiApiStyleDefaultMigrated');
+  if (!styleMigrated) {
+    await db.runAsync("UPDATE settings SET value = 'responses' WHERE key = 'aiApiStyle' AND value = 'auto'");
+    await db.runAsync('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', 'aiApiStyleDefaultMigrated', '1');
+  }
+
+  // 一次性迁移：接口模式去除 auto，历史 auto 值（含已保存方案）统一归一到 responses。
+  const autoRemoved = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', 'aiApiStyleAutoRemoved');
+  if (!autoRemoved) {
+    await db.runAsync("UPDATE ai_profiles SET apiStyle = 'responses' WHERE apiStyle = 'auto'");
+    await db.runAsync('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', 'aiApiStyleAutoRemoved', '1');
+  }
 }
 
 export async function initializeDatabase() {
@@ -219,6 +248,12 @@ export async function getSettings(): Promise<Settings> {
     if (row.key === 'knowledgeListMode') {
       next.knowledgeListMode = row.value === 'folders' || row.value === 'documents' ? row.value : DEFAULT_SETTINGS.knowledgeListMode;
     }
+    if (row.key === 'aiBaseUrl') next.aiBaseUrl = row.value || DEFAULT_SETTINGS.aiBaseUrl;
+    if (row.key === 'aiApiKey') next.aiApiKey = row.value || DEFAULT_SETTINGS.aiApiKey;
+    if (row.key === 'aiModel') next.aiModel = row.value || DEFAULT_SETTINGS.aiModel;
+    if (row.key === 'aiApiStyle') {
+      next.aiApiStyle = row.value === 'responses' || row.value === 'chat' || row.value === 'anthropic' ? row.value : DEFAULT_SETTINGS.aiApiStyle;
+    }
   }
   return next;
 }
@@ -228,23 +263,117 @@ export async function updateSetting<K extends keyof Settings>(key: K, value: Set
   await db.runAsync('INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)', key, String(value));
 }
 
-async function pickMarkdownSource() {
+// ===== AI 配置方案：命名的 Base URL / Key / 模型 / 接口模式组合，支持一键切换 =====
+
+export async function listAiProfiles(): Promise<AiProfileRecord[]> {
+  const db = await getDb();
+  return db.getAllAsync<AiProfileRecord>('SELECT * FROM ai_profiles ORDER BY id ASC');
+}
+
+// 保存方案：同名视为覆盖更新（UNIQUE(name) + upsert）。
+export async function saveAiProfile(name: string, config: { baseUrl: string; apiKey: string; model: string; apiStyle: Settings['aiApiStyle'] }): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('请填写方案名称');
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO ai_profiles(name, baseUrl, apiKey, model, apiStyle, createdAt) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET baseUrl = excluded.baseUrl, apiKey = excluded.apiKey, model = excluded.model, apiStyle = excluded.apiStyle',
+    trimmed,
+    config.baseUrl,
+    config.apiKey,
+    config.model,
+    config.apiStyle,
+    nowIso(),
+  );
+}
+
+export async function deleteAiProfile(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM ai_profiles WHERE id = ?', id);
+}
+
+// ===== AI 模型映射（菜单显示名 → 实际请求模型）的本地缓存 =====
+// 与获取时的 Base URL + API Key 绑定（指纹）：端点或 Key 变更后旧缓存视为失效。
+
+export type AiModelMapping = { name: string; model: string };
+
+const AI_MODEL_CATALOG_KEY = 'aiModelCatalog';
+
+function aiCatalogFingerprint(baseUrl: string, apiKey: string): string {
+  return `${baseUrl.trim()}::${apiKey.trim()}`;
+}
+
+export async function getAiModelCatalog(baseUrl: string, apiKey: string): Promise<AiModelMapping[]> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM settings WHERE key = ?', AI_MODEL_CATALOG_KEY);
+  if (!row) return [];
+  try {
+    const parsed = JSON.parse(row.value) as { fingerprint?: string; items?: AiModelMapping[] };
+    if (parsed?.fingerprint !== aiCatalogFingerprint(baseUrl, apiKey) || !Array.isArray(parsed.items)) return [];
+    return parsed.items.filter((item) => typeof item?.name === 'string' && typeof item?.model === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export async function saveAiModelCatalog(baseUrl: string, apiKey: string, items: AiModelMapping[]): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)',
+    AI_MODEL_CATALOG_KEY,
+    JSON.stringify({ fingerprint: aiCatalogFingerprint(baseUrl, apiKey), items }),
+  );
+}
+
+// 导入文件大小上限：3MB（文件大小限制，不代表 AI 上下文/token 限制）。
+export const MAX_IMPORT_FILE_BYTES = 3 * 1024 * 1024;
+
+// 导入文件的类别：markdown = 可直接本地解析的文本；pdf / word = 交给 AI 重排的文档。
+export type ImportFileKind = 'markdown' | 'pdf' | 'word';
+export type PickedImportFile = { name: string; size: number; uri: string; mimeType: string | null; kind: ImportFileKind };
+
+export function classifyImportFile(name: string, mimeType: string | null): ImportFileKind | 'unsupported' {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.md') || lower.endsWith('.markdown') || lower.endsWith('.txt') || (mimeType?.includes('text') ?? false)) return 'markdown';
+  if (lower.endsWith('.pdf') || mimeType === 'application/pdf') return 'pdf';
+  if (lower.endsWith('.docx') || lower.endsWith('.doc') || mimeType?.includes('wordprocessing') || mimeType === 'application/msword') return 'word';
+  return 'unsupported';
+}
+
+function importFileMime(kind: ImportFileKind, name: string, mimeType: string | null): string {
+  if (kind === 'pdf') return 'application/pdf';
+  if (kind === 'word') {
+    if (mimeType && mimeType !== 'application/octet-stream' && mimeType !== 'application/x-msdownload') return mimeType;
+    return name.toLowerCase().endsWith('.doc') ? 'application/msword' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  return mimeType ?? 'text/plain';
+}
+
+// 选择导入文件：只挑文件不读内容，读取与解析发生在用户确认导入配置之后。
+// 未开启重排模型时仅接受 Markdown / 文本文件；开启后同时接受 pdf / word。
+// 取消选择返回 null，由调用方静默处理。
+export async function pickImportFile(options: { allowDocuments: boolean }): Promise<PickedImportFile | null> {
   const result = await DocumentPicker.getDocumentAsync({
-    type: ['text/markdown', 'text/plain', 'application/octet-stream', '*/*'],
+    type: ['text/markdown', 'text/plain', 'application/octet-stream', 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', '*/*'],
     copyToCacheDirectory: true,
     multiple: false,
   });
 
   if (result.canceled || !result.assets?.[0]) return null;
   const asset = result.assets[0];
-  if (!asset.name.toLowerCase().endsWith('.md') && asset.mimeType && !asset.mimeType.includes('markdown') && !asset.mimeType.includes('text')) {
-    throw new Error('请选择 Markdown（.md）或文本文件');
+  const kind = classifyImportFile(asset.name, asset.mimeType ?? null);
+  if (kind === 'unsupported' || (kind !== 'markdown' && !options.allowDocuments)) {
+    throw new Error(options.allowDocuments ? '暂仅支持 md / txt / pdf / word 文件' : '仅支持 Markdown（.md）或文本文件；如需导入 pdf / word，请开启重排模型');
   }
+  return { name: asset.name, size: asset.size ?? 0, uri: asset.uri, mimeType: importFileMime(kind, asset.name, asset.mimeType ?? null), kind };
+}
 
-  const picked = new File(asset.uri);
-  const content = await picked.text();
-  const parsed = parseMarkdownToCards(content, asset.name);
-  return { asset, content, parsed };
+export async function readMarkdownText(uri: string): Promise<string> {
+  return await new File(uri).text();
+}
+
+// PDF 走 AI 文件输入需要 base64（expo-file-system 返回不带 data: 前缀的纯 base64）。
+export async function readFileBase64(uri: string): Promise<string> {
+  return await new File(uri).base64();
 }
 
 // 上传的文档在应用文档目录里存一份本机副本，避免依赖选择器的临时文件。
@@ -258,24 +387,46 @@ async function storeMarkdownCopy(content: string, originalName: string) {
   return stored;
 }
 
-// 导入文档：folderId 未提供（或为空）时归入默认文件夹，保证文档始终有合法归属。
-export async function importMarkdownDocument(folderId?: number | null): Promise<{ document: DocumentRecord; cards: number } | null> {
-  const picked = await pickMarkdownSource();
-  if (!picked) return null;
-  const { asset, content, parsed } = picked;
-  const stored = await storeMarkdownCopy(content, asset.name);
-
+// 生成不与目标文件夹下现有文档重名的标题：重名时追加（1）（2）……（文件管理器惯例）。
+// 无重名时原样返回。
+export async function uniqueDocumentTitle(title: string, folderId: number | null): Promise<string> {
   const db = await getDb();
   const targetFolderId = folderId ?? (await getDefaultFolderId(db));
+  const taken = async (candidate: string) =>
+    (await db.getFirstAsync<{ id: number }>('SELECT id FROM documents WHERE folderId = ? AND title = ?', targetFolderId, candidate)) != null;
+  if (!(await taken(title))) return title;
+  for (let index = 1; index < 500; index += 1) {
+    const candidate = `${title}（${index}）`;
+    if (!(await taken(candidate))) return candidate;
+  }
+  return `${title}（${Date.now()}）`;
+}
+
+// 导入 Markdown 文本：存本机副本 → 按 # / ## / ### 解析 → 事务写入文档与卡片。
+// 文件挑选、读取与（可选的）AI 标准化由调用方完成后统一走这里入库，
+// 保证知识卡片生成逻辑只有一套。folderId 为空时归入默认文件夹；
+// titleOverride 用于同名自动重命名（仅改文档名，卡片内容不动）。
+export async function importMarkdownContent(params: {
+  content: string;
+  fileName: string;
+  fileUri?: string;
+  folderId: number | null;
+  titleOverride?: string;
+}): Promise<{ document: DocumentRecord; cards: number }> {
+  const parsed = parseMarkdownToCards(params.content, params.fileName);
+  const stored = await storeMarkdownCopy(params.content, params.fileName);
+
+  const db = await getDb();
+  const targetFolderId = params.folderId ?? (await getDefaultFolderId(db));
   let documentId = 0;
   await db.withExclusiveTransactionAsync(async (txn) => {
     const inserted = await txn.runAsync(
       'INSERT INTO documents(title, fileName, fileUri, storedPath, content, importedAt, cardCount, folderId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      parsed.title,
-      asset.name,
-      asset.uri,
+      params.titleOverride ?? parsed.title,
+      params.fileName,
+      params.fileUri ?? '',
       stored.uri,
-      content,
+      params.content,
       nowIso(),
       parsed.cards.length,
       targetFolderId,
