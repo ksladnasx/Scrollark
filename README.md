@@ -1,4 +1,4 @@
-# Scrollark
+# 🌟Scrollark
 
 Scrollark 是一款面向 Markdown 知识文档的移动端卡片阅读应用。应用会将本地文档（md / txt / pdf / word）导入到本机数据库，并按照约定的标题层级拆分为可刷读、可收藏、可批注、可统计的知识卡片；不符合标题层级的文档还可以选择交给 AI 重排成标准结构后再切卡，适合把长篇笔记、课程资料、读书摘录等内容转化为轻量复习流。
 
@@ -121,13 +121,13 @@ Scrollark 是一款面向 Markdown 知识文档的移动端卡片阅读应用。
 
 <!-- 截图待补充：将对应名称的图片放入 docs/screenshots/ 即可显示 -->
 
-| 导入文件弹窗 | 重排模型开关 | AI 设置 | 模型映射 |
-| --- | --- | --- | --- |
-| <img src="./docs/screenshots/导入文件弹窗.png" alt="导入文件弹窗" width="200" /> | <img src="./docs/screenshots/重排模型开关.png" alt="重排模型开关" width="200" /> | <img src="./docs/screenshots/AI设置.png" alt="AI设置" width="200" /> | <img src="./docs/screenshots/模型映射.png" alt="模型映射" width="200" /> |
+| 导入文件弹窗 | AI 设置 | 模型映射 |
+| --- | --- | --- |
+| <img src="./docs/screenshots/导入文件弹窗.jpg" alt="导入文件弹窗" width="200" /> | <img src="./docs/screenshots/AI设置.jpg" alt="AI设置" width="200" /> | <img src="./docs/screenshots/模型映射.jpg" alt="模型映射" width="200" /> |
 
 | 导入进度条 | 配置方案 | 同名重命名提示 |
 | --- | --- | --- |
-| <img src="./docs/screenshots/导入进度条.png" alt="导入进度条" width="200" /> | <img src="./docs/screenshots/配置方案.png" alt="配置方案" width="200" /> | <img src="./docs/screenshots/同名重命名提示.png" alt="同名重命名提示" width="200" /> |
+| <img src="./docs/screenshots/导入进度条.jpg" alt="导入进度条" width="200" /> | <img src="./docs/screenshots/配置方案.jpg" alt="配置方案" width="200" /> | <img src="./docs/screenshots/同名重命名提示.jpg" alt="同名重命名提示" width="200" /> |
 
 
 
