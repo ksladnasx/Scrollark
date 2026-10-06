@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import React from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, type GestureResponderEvent, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import type { CardRecord, Settings } from '../domain/types';
 import { extractPreviewImage } from '../utils/markdown';
 import { boldTextStyles, CUSTOM_FONT_BOLD_WEIGHT } from '../utils/typography';
@@ -72,6 +73,10 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
   const shouldShowTitleInBody = !shouldShowTitleInHeader;
   const [showHeaderTitle, setShowHeaderTitle] = React.useState(false);
   const showHeaderTitleRef = React.useRef(false);
+  // 毛玻璃头部为悬浮层，正文需按其实际高度留出顶部内边距；先用估算值避免首帧跳动。
+  const [textHeaderHeight, setTextHeaderHeight] = React.useState(() => (titleInHeader && !compact ? 178 : 54));
+  // Android 端真实模糊需要显式指定模糊目标，缺省时 expo-blur 会退化为纯半透明色块。
+  const blurTargetRef = React.useRef<View>(null);
   const titleHeightRef = React.useRef(42);
   const lastBodyTapRef = React.useRef({ time: 0, x: 0, y: 0 });
   const bodyTouchStartRef = React.useRef({ time: 0, x: 0, y: 0 });
@@ -115,6 +120,10 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
 
   const handleTitleLayout = React.useCallback((event: { nativeEvent: { layout: { height: number } } }) => {
     titleHeightRef.current = event.nativeEvent.layout.height;
+  }, []);
+
+  const handleTextHeaderLayout = React.useCallback((event: LayoutChangeEvent) => {
+    setTextHeaderHeight(event.nativeEvent.layout.height);
   }, []);
 
   const handleContentScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -187,6 +196,30 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
     </>
   );
 
+  const bodyArea = recall?.hidden ? (
+    <View style={[styles.recallVeil, { backgroundColor: theme.card }]}>
+      <Ionicons name="eye-off-outline" size={30} color={theme.inkMuted} />
+      <Text style={[styles.recallTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]}>先主动回忆</Text>
+      <Text style={[styles.recallBody, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>看着标题，在脑海里过一遍这张卡片的内容，再对照答案检查自己记住了多少。</Text>
+      <AppButton label="显示答案" icon="eye-outline" onPress={recall.onReveal} style={styles.recallButton} />
+    </View>
+  ) : compact ? (
+    <View style={[styles.compactContent, { backgroundColor: theme.paperElevated }]}>{body}</View>
+  ) : (
+    <ScrollView
+      style={[styles.content, { backgroundColor: theme.card }]}
+      contentContainerStyle={[styles.contentInner, settings.cardHeaderImageMode === 'hidden' && !compact && { paddingTop: textHeaderHeight + 16 }]}
+      showsVerticalScrollIndicator={false}
+      nestedScrollEnabled
+      scrollEventThrottle={16}
+      onScroll={handleContentScroll}
+      onTouchStart={onDoubleTapBody ? handleBodyTouchStart : undefined}
+      onTouchEnd={onDoubleTapBody ? handleBodyTouchEnd : undefined}
+    >
+      {body}
+    </ScrollView>
+  );
+
   return (
     <View style={[styles.card, { backgroundColor: theme.card }, compact && [styles.compactCard, { backgroundColor: theme.paperElevated, borderColor: theme.line }]]}>
       {compact && onDelete ? (
@@ -224,47 +257,55 @@ export function KnowledgeCard({ card, settings, compact = false, onClose, footer
             </Pressable>
           ) : null}
         </CardHeaderImage>
-      ) : (
-        <View style={[styles.textHeader, compact && styles.compactTextHeader, { backgroundColor: theme.paperSoft, borderBottomColor: theme.line }] }>
-          {onClose ? (
-            <Pressable onPress={onClose} style={({ pressed }) => [styles.textCloseButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
-              <Ionicons name="chevron-back" size={23} color={theme.ink} />
-            </Pressable>
-          ) : null}
-          {(showHeaderTitle || shouldShowTitleInHeader) && !compact ? (
-            <View style={styles.textHeaderContent}>
-              <Text selectable style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]} numberOfLines={1}>{title}</Text>
-              {meta ? <Text selectable style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>{meta}</Text> : null}
-            </View>
-          ) : (
-            <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>Scrollark · Knowledge Card</Text>
-          )}
+      ) : compact ? (
+        <View style={[styles.textHeader, { backgroundColor: theme.paperSoft, borderBottomColor: theme.line }]}>
+          <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>Knowledge Card</Text>
         </View>
+      ) : null}
+
+      {settings.cardHeaderImageMode === 'hidden' && !compact ? (
+        <BlurTargetView ref={blurTargetRef} style={styles.blurTarget}>{bodyArea}</BlurTargetView>
+      ) : (
+        bodyArea
       )}
 
-      {recall?.hidden ? (
-        <View style={[styles.recallVeil, { backgroundColor: theme.card }]}>
-          <Ionicons name="eye-off-outline" size={30} color={theme.inkMuted} />
-          <Text style={[styles.recallTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]}>先主动回忆</Text>
-          <Text style={[styles.recallBody, { color: theme.inkMuted, fontFamily: settings.fontFamily }]}>看着标题，在脑海里过一遍这张卡片的内容，再对照答案检查自己记住了多少。</Text>
-          <AppButton label="显示答案" icon="eye-outline" onPress={recall.onReveal} style={styles.recallButton} />
+      {settings.cardHeaderImageMode === 'hidden' && !compact ? (
+        <View style={[styles.textHeaderOverlay, { borderBottomColor: theme.line }]} onLayout={handleTextHeaderLayout}>
+          <BlurView
+            intensity={theme.dark ? 50 : 60}
+            tint={theme.dark ? 'dark' : 'extraLight'}
+            experimentalBlurMethod="dimezisBlurView"
+            blurTarget={blurTargetRef}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.paperSoft, opacity: theme.dark ? 0.6 : 0.5 }]} />
+          {onClose || !shouldShowTitleInHeader ? (
+            <View style={styles.textHeaderBar}>
+              {onClose ? (
+                <Pressable onPress={onClose} style={({ pressed }) => [styles.textCloseButton, { backgroundColor: theme.paperElevated, borderColor: theme.line }, pressed && styles.pressed]}>
+                  <Ionicons name="chevron-back" size={23} color={theme.ink} />
+                </Pressable>
+              ) : null}
+              {!shouldShowTitleInHeader ? (
+                showHeaderTitle ? (
+                  <View style={styles.textHeaderContent}>
+                    <Text selectable style={[styles.textHeaderTitle, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]} numberOfLines={1}>{title}</Text>
+                    {meta ? <Text selectable style={[styles.textHeaderSource, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>{meta}</Text> : null}
+                  </View>
+                ) : (
+                  <Text style={[styles.textHeaderLabel, { color: theme.inkMuted, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.inkMuted)]} numberOfLines={1}>Knowledge Card</Text>
+                )
+              ) : null}
+            </View>
+          ) : null}
+          {shouldShowTitleInHeader ? (
+            <View style={styles.textTitleBox}>
+              <Text selectable style={[styles.title, { color: theme.ink, fontFamily: settings.fontFamily }, boldTextStyles(settings.fontFamily, theme.ink)]} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
+              {meta ? <Text selectable style={[styles.meta, { color: theme.inkMuted, fontFamily: settings.fontFamily }]} numberOfLines={1} ellipsizeMode="tail">{meta}</Text> : null}
+            </View>
+          ) : null}
         </View>
-      ) : compact ? (
-        <View style={[styles.compactContent, { backgroundColor: theme.paperElevated }]}>{body}</View>
-      ) : (
-        <ScrollView
-          style={[styles.content, { backgroundColor: theme.card }]}
-          contentContainerStyle={styles.contentInner}
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled
-          scrollEventThrottle={16}
-          onScroll={handleContentScroll}
-          onTouchStart={onDoubleTapBody ? handleBodyTouchStart : undefined}
-          onTouchEnd={onDoubleTapBody ? handleBodyTouchEnd : undefined}
-        >
-          {body}
-        </ScrollView>
-      )}
+      ) : null}
 
       {footer ? <View style={[styles.footer, { backgroundColor: theme.card, borderTopColor: theme.line }]}>{footer}</View> : null}
     </View>
@@ -347,16 +388,36 @@ const styles = StyleSheet.create({
     textShadowRadius: 6,
   },
   textHeader: {
-    height: 86,
+    height: 54,
     paddingHorizontal: 18,
     justifyContent: 'center',
+    alignContent:"center",
     borderBottomWidth: 1,
   },
-  compactTextHeader: {
+  textHeaderOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    borderBottomWidth: 1,
+    overflow: 'hidden',
+  },
+  blurTarget: {
+    flex: 1,
+  },
+  textHeaderBar: {
     height: 54,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+  },
+  textTitleBox: {
+    paddingTop: 14,
+    paddingBottom: 16,
+    paddingHorizontal: 28,
+    gap: 6,
   },
   textHeaderLabel: {
-    marginLeft: 58,
+    marginLeft: 78,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.1,
@@ -379,7 +440,8 @@ const styles = StyleSheet.create({
   textCloseButton: {
     position: 'absolute',
     left: 18,
-    top: 21,
+    top: '50%',
+    transform: [{ translateY: -22 }],
     width: 44,
     height: 44,
     borderRadius: 22,

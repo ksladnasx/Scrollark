@@ -258,8 +258,7 @@ export function HomeScreen({ stats, settings, onStartSession, onStartAheadReview
               <View style={styles.sectionHead}>
                 <View style={styles.sectionHeadRow}>
                   <View style={styles.sectionHeadText}>
-                    <Text style={styles.sectionLabel}>今天推荐</Text>
-                    <Text style={styles.sectionMeta}>每天更新一次 · 点击卡片从它开始 GET</Text>
+                    <Text style={styles.sectionLabel}>今日推荐</Text>
                   </View>
                   <Pressable
                     accessibilityRole="button"

@@ -1,9 +1,10 @@
 import React from 'react';
-import { Image, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useAppTheme } from '../theme/ThemeContext';
 import { palette, radius } from '../theme/tokens';
 import { parseMarkdownBlocks } from '../utils/markdown';
 import { boldTextStyles } from '../utils/typography';
+import { ImageViewerModal } from './ImageViewerModal';
 
 type InlineProps = {
   text: string;
@@ -53,6 +54,28 @@ export function MarkdownRenderer({
 
 // 渲染已解析的块列表：预览等长文档场景可以在外部做分页，只渲染前 N 个块，
 // 避免一次性挂载整篇文档造成明显卡顿。
+// 用户图片（手写卡照片等）：保持完整内容不裁剪，宽度超限才等比缩小，点击可全屏放大查看。
+function MarkdownImage({ uri, alt, fontFamily, onZoom }: { uri: string; alt?: string; fontFamily?: string; onZoom: (uri: string) => void }) {
+  const theme = useAppTheme();
+  const [ratio, setRatio] = React.useState(4 / 3);
+  return (
+    <View style={styles.imageBlock}>
+      <Pressable onPress={() => onZoom(uri)} accessibilityRole="imagebutton" accessibilityLabel={alt || '查看大图'}>
+        <Image
+          source={{ uri }}
+          style={[styles.image, { aspectRatio: ratio }]}
+          resizeMode="contain"
+          onLoad={(event) => {
+            const source = event.nativeEvent.source;
+            if (source.width > 0 && source.height > 0) setRatio(source.width / source.height);
+          }}
+        />
+      </Pressable>
+      {alt ? <Text style={[styles.imageCaption, { color: theme.inkMuted, fontFamily }]}>{alt}</Text> : null}
+    </View>
+  );
+}
+
 export function MarkdownBlocks({
   blocks,
   color = palette.ink,
@@ -68,6 +91,7 @@ export function MarkdownBlocks({
 }) {
   const { width } = useWindowDimensions();
   const theme = useAppTheme();
+  const [zoomUri, setZoomUri] = React.useState<string | null>(null);
   return (
     <View style={styles.wrap}>
       {blocks.map((block, index) => {
@@ -85,15 +109,13 @@ export function MarkdownBlocks({
         }
         if (block.type === 'image') {
           return (
-            <View key={`block-image-${index}`} style={styles.imageBlock}>
-              <Image
-                source={{ uri: block.uri }}
-                style={styles.image}
-                resizeMode="cover"
-                accessibilityLabel={block.alt || '卡片配图'}
-              />
-              {block.alt ? <Text style={[styles.imageCaption, { color: theme.inkMuted, fontFamily }]}>{block.alt}</Text> : null}
-            </View>
+            <MarkdownImage
+              key={`block-image-${index}`}
+              uri={block.uri}
+              alt={block.alt}
+              fontFamily={fontFamily}
+              onZoom={setZoomUri}
+            />
           );
         }
         if (block.type === 'quote') {
@@ -148,6 +170,7 @@ export function MarkdownBlocks({
         }
         return <Inline key={`block-paragraph-${index}`} text={block.text} color={color} fontSize={fontSize} fontFamily={fontFamily} letterSpacing={letterSpacing} />;
       })}
+      <ImageViewerModal uri={zoomUri} onClose={() => setZoomUri(null)} />
     </View>
   );
 }
@@ -205,7 +228,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   imageBlock: { gap: 6 },
-  image: { width: '100%', aspectRatio: 4 / 3, maxHeight: 300, borderRadius: radius.lg, backgroundColor: 'rgba(17,17,15,0.06)' },
+  image: { width: '100%', borderRadius: radius.lg, backgroundColor: 'rgba(17,17,15,0.06)' },
   imageCaption: { fontSize: 12, fontWeight: '600' },
   list: {
     gap: 8,
